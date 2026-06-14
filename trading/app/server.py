@@ -243,6 +243,186 @@ def api_size():
         return jsonify({"error": str(e)}), 400
 
 
+# ── Research & Barometer ─────────────────────────────────────────────────────
+
+@app.get("/api/research/<symbol>")
+def api_research(symbol):
+    import io, contextlib, logging
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)
+    info: dict = {}
+    news: list = []
+    try:
+        import yfinance as yf
+        buf = io.StringIO()
+        t = yf.Ticker(symbol.upper())
+        with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+            try:
+                info = t.info or {}
+            except Exception:
+                info = {}
+            try:
+                news = t.news or []
+            except Exception:
+                news = []
+    except Exception:
+        pass
+    return jsonify({
+            "symbol": symbol.upper(),
+            "name": info.get("longName") or info.get("shortName", symbol.upper()),
+            "sector": info.get("sector", ""),
+            "industry": info.get("industry", ""),
+            "description": (info.get("longBusinessSummary") or "")[:600],
+            "market_cap": _safe_float(info.get("marketCap")),
+            "pe_ratio": _safe_float(info.get("trailingPE")),
+            "forward_pe": _safe_float(info.get("forwardPE")),
+            "eps": _safe_float(info.get("trailingEps")),
+            "dividend_yield": _safe_float(info.get("dividendYield")),
+            "beta": _safe_float(info.get("beta")),
+            "week52_high": _safe_float(info.get("fiftyTwoWeekHigh")),
+            "week52_low": _safe_float(info.get("fiftyTwoWeekLow")),
+            "avg_volume": info.get("averageVolume"),
+            "analyst_target": _safe_float(info.get("targetMeanPrice")),
+            "recommendation": info.get("recommendationKey", ""),
+            "num_analysts": info.get("numberOfAnalystOpinions"),
+            "website": info.get("website", ""),
+            "news": [
+                {"title": n.get("title", ""), "url": n.get("link", ""),
+                 "publisher": n.get("publisher", ""), "time": n.get("providerPublishTime", 0)}
+                for n in (news or [])[:8]
+            ],
+        })
+
+
+@app.get("/api/barometer/<symbol>")
+def api_barometer(symbol):
+    try:
+        df = mkt.fetch_ohlcv(symbol, period="6mo")
+        df = ind.add_all_indicators(df)
+        df2 = df.dropna(subset=["RSI_14"])
+        if df2.empty:
+            return jsonify({"error": "Insufficient data"}), 400
+        row = df2.iloc[-1]
+        prev = df2.iloc[-2] if len(df2) > 1 else row
+
+        signals = []
+        vs = []
+
+        def sig(name, label, v):
+            color = "buy" if v > 0.1 else "sell" if v < -0.1 else "neutral"
+            signals.append({"indicator": name, "signal": label, "color": color})
+            vs.append(v)
+
+        rsi = row.get("RSI_14")
+        if rsi is not None:
+            if rsi < 30:    sig("RSI 14", "Oversold — Strong Buy", 1.0)
+            elif rsi < 45:  sig("RSI 14", "Approaching Oversold — Buy", 0.5)
+            elif rsi < 55:  sig("RSI 14", "Neutral", 0.0)
+            elif rsi < 70:  sig("RSI 14", "Approaching Overbought — Sell", -0.5)
+            else:           sig("RSI 14", "Overbought — Strong Sell", -1.0)
+
+        m, ms = row.get("MACD"), row.get("MACD_Signal")
+        if m is not None and ms is not None:
+            mh = row.get("MACD_Hist") or 0
+            mh_p = prev.get("MACD_Hist") or 0
+            if m > ms and mh > mh_p:    sig("MACD", "Bullish & Accelerating", 1.0)
+            elif m > ms:                 sig("MACD", "Bullish Crossover — Buy", 0.5)
+            elif m < ms and mh < mh_p:   sig("MACD", "Bearish & Accelerating", -1.0)
+            else:                        sig("MACD", "Bearish Crossover — Sell", -0.5)
+
+        close, sma20, sma50 = row.get("Close"), row.get("SMA_20"), row.get("SMA_50")
+        if all(v is not None for v in [close, sma20, sma50]):
+            if close > sma20 > sma50:    sig("Moving Avg", "Golden Zone — Strong Buy", 1.0)
+            elif close > sma20:           sig("Moving Avg", "Above SMA20 — Bullish", 0.5)
+            elif close < sma20 < sma50:   sig("Moving Avg", "Death Zone — Strong Sell", -1.0)
+            else:                         sig("Moving Avg", "Below SMA20 — Bearish", -0.5)
+
+        bb = row.get("BB_PctB")
+        if bb is not None:
+            if bb < 0.15:    sig("Bollinger", "Near Lower Band — Strong Buy", 1.0)
+            elif bb < 0.4:   sig("Bollinger", "Lower Half — Buy", 0.5)
+            elif bb < 0.6:   sig("Bollinger", "Mid-Band — Neutral", 0.0)
+            elif bb < 0.85:  sig("Bollinger", "Upper Half — Sell", -0.5)
+            else:            sig("Bollinger", "Near Upper Band — Strong Sell", -1.0)
+
+        ema12 = row.get("EMA_12")
+        if ema12 is not None and close is not None:
+            sig("EMA 12", "Price above EMA12 — Bullish" if close > ema12 else "Price below EMA12 — Bearish",
+                0.5 if close > ema12 else -0.5)
+
+        score = round((sum(vs) / len(vs) * 100) if vs else 0, 1)
+        if score >= 60:    verdict = "Strong Buy"
+        elif score >= 20:  verdict = "Buy"
+        elif score >= -20: verdict = "Neutral"
+        elif score >= -60: verdict = "Sell"
+        else:              verdict = "Strong Sell"
+
+        return jsonify({"symbol": symbol.upper(), "score": score, "verdict": verdict, "signals": signals})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+# ── Broker (Alpaca Markets) ───────────────────────────────────────────────────
+
+@app.get("/api/broker/status")
+def api_broker_status():
+    try:
+        from trading import broker as bkr
+        return jsonify({
+            "configured": bkr.is_configured(),
+            "paper": os.environ.get("ALPACA_PAPER", "true").lower() != "false",
+            "available": True,
+        })
+    except Exception:
+        return jsonify({"configured": False, "paper": True, "available": False})
+
+
+@app.get("/api/broker/account")
+def api_broker_account():
+    try:
+        from trading import broker as bkr
+        return jsonify(bkr.get_account())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.post("/api/broker/buy")
+def api_broker_buy():
+    try:
+        from trading import broker as bkr
+        body = request.get_json() or {}
+        order = bkr.place_order(
+            body.get("symbol", ""), "buy",
+            qty=float(body["qty"]) if "qty" in body else None,
+            notional=float(body["notional"]) if "notional" in body else None,
+        )
+        return jsonify({"success": True, "order": order})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.post("/api/broker/sell")
+def api_broker_sell():
+    try:
+        from trading import broker as bkr
+        body = request.get_json() or {}
+        order = bkr.place_order(
+            body.get("symbol", ""), "sell",
+            qty=float(body["qty"]) if "qty" in body else None,
+        )
+        return jsonify({"success": True, "order": order})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.get("/api/broker/positions")
+def api_broker_positions():
+    try:
+        from trading import broker as bkr
+        return jsonify(bkr.get_positions())
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
 # ── Education ─────────────────────────────────────────────────────────────────
 
 @app.get("/api/learn/lessons")

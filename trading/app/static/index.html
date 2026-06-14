@@ -180,6 +180,27 @@ tr:hover td{background:rgba(255,255,255,.02)}
 .sig-sell{background:rgba(255,91,91,.18);color:var(--red);border:1.5px solid var(--red)}
 .sig-hold{background:rgba(240,185,11,.12);color:var(--yellow);border:1.5px solid var(--yellow)}
 
+/* ── Research stats grid ─────────────────────────────────────────── */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:0}
+.stat-cell{background:var(--surface2);border-radius:10px;padding:12px 14px;border:1px solid var(--border)}
+.stat-lbl{font-size:10px;color:var(--text3);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+.stat-val{font-size:15px;font-weight:800;line-height:1.2}
+/* ── News items ──────────────────────────────────────────────────── */
+.news-item{display:block;padding:12px 0;border-bottom:1px solid var(--border);text-decoration:none;color:inherit;cursor:pointer}
+.news-item:last-child{border-bottom:none}
+.news-item:hover .news-title{color:var(--accent)}
+.news-title{font-size:13px;font-weight:600;line-height:1.4;margin-bottom:4px}
+.news-meta{font-size:11px;color:var(--text3)}
+/* ── Signal pills ────────────────────────────────────────────────── */
+.sig-pill{display:inline-block;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+.sig-pill.sig-buy{background:rgba(0,196,140,.15);color:var(--green)}
+.sig-pill.sig-sell{background:rgba(255,91,91,.15);color:var(--red)}
+.sig-pill.sig-neutral{background:rgba(168,174,203,.1);color:var(--text3)}
+/* ── Broker setup card ───────────────────────────────────────────── */
+.broker-setup{background:var(--surface2);border-radius:12px;padding:18px;font-size:13px;line-height:1.9;color:var(--text2)}
+.broker-setup code{background:var(--surface3);padding:2px 8px;border-radius:5px;font-family:monospace;font-size:12px;color:var(--accent)}
+@media(max-width:768px){.stats-grid{grid-template-columns:1fr 1fr}}
+
 /* ── Indicator grid ──────────────────────────────────────────────── */
 .ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .ind-cell{background:var(--surface2);border-radius:10px;padding:14px;border:1px solid var(--border)}
@@ -292,6 +313,10 @@ tr:hover td{background:rgba(255,255,255,.02)}
         <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         Markets
       </div>
+      <div class="nav-item" onclick="goPage('research')" id="ni-research">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Research
+      </div>
       <div class="nav-item" onclick="goPage('analyze')" id="ni-analyze">
         <svg viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
         Analyze
@@ -393,7 +418,12 @@ function fmtK(n){if(n>=1000000)return(n/1000000).toFixed(2)+'M'; if(n>=1000)retu
 function coinMeta(sym){return COINS.find(c=>c.sym===sym)||{abbr:sym.slice(0,4),color:'#4C7BF4',bg:'rgba(76,123,244,.15)',name:sym};}
 function coinIcon(sym,size=36){
   const c=coinMeta(sym);
-  return `<div class="coin-icon" style="width:${size}px;height:${size}px;background:${c.bg};color:${c.color}">${c.abbr.slice(0,4)}</div>`;
+  const clean=sym.replace('-USD','').replace('-','');
+  return `<div class="coin-icon" style="width:${size}px;height:${size}px;background:${c.bg};color:${c.color};overflow:hidden">
+    <img src="https://assets.parqet.com/logos/symbol/${clean}?format=svg"
+         style="width:100%;height:100%;object-fit:cover;border-radius:50%;display:none"
+         onload="this.style.display='block';this.nextElementSibling.style.display='none'"
+         onerror="this.style.display='none'"><span>${c.abbr.slice(0,4)}</span></div>`;
 }
 
 // Sparkline (pseudo-random deterministic)
@@ -416,19 +446,140 @@ function goPage(name){
   document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
   document.getElementById('ni-'+name)?.classList.add('active');
   document.getElementById('topbar-title').textContent =
-    {dashboard:'Dashboard',markets:'Markets',analyze:'Analyze',
+    {dashboard:'Dashboard',markets:'Markets',research:'Research',analyze:'Analyze',
      trade:'Trade',portfolio:'Portfolio',learn:'Lessons',glossary:'Glossary'}[name]||name;
   if(priceChart){priceChart.destroy();priceChart=null;}
-  const fns={dashboard:renderDashboard,markets:renderMarkets,analyze:renderAnalyze,
+  const fns={dashboard:renderDashboard,markets:renderMarkets,research:renderResearch,analyze:renderAnalyze,
     trade:renderTrade,portfolio:renderPortfolio,learn:renderLearn,glossary:renderGlossary};
   fns[name]?.(document.getElementById('page'));
 }
+let researchSymbol='AAPL';
+
 function globalSearch(){
   const sym=document.getElementById('global-search').value.trim().toUpperCase();
   if(!sym)return;
-  analyzeSymbol=sym;
+  analyzeSymbol=sym; researchSymbol=sym;
   goPage('analyze');
   document.getElementById('global-search').value='';
+}
+
+// ── BAROMETER GAUGE ───────────────────────────────────────────────────────────
+function buildGauge(score, verdict){
+  const rot=Math.max(-90,Math.min(90,(score/100)*90));
+  const vc=verdict==='Strong Buy'?'#00C48C':verdict==='Buy'?'#7EC848':verdict==='Neutral'?'#FFD700':verdict==='Sell'?'#FF8800':'#FF4444';
+  return `<div style="display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 0">
+    <div style="position:relative;width:200px;height:100px;overflow:hidden">
+      <div style="position:absolute;top:0;left:0;width:200px;height:200px;border-radius:100px;
+          background:conic-gradient(from 180deg,#FF4444 0deg 36deg,#FF8800 36deg 72deg,
+          #FFD700 72deg 108deg,#7EC848 108deg 144deg,#00C48C 144deg 180deg,#1a1f3a 180deg 360deg)">
+      </div>
+      <div style="position:absolute;top:45px;left:45px;width:110px;height:110px;border-radius:55px;background:var(--surface)"></div>
+      <div style="position:absolute;bottom:0;left:98px;width:4px;height:80px;
+          background:linear-gradient(to top,rgba(255,255,255,.2),#fff);border-radius:2px 2px 0 0;
+          transform-origin:bottom center;transform:rotate(${rot}deg);
+          transition:transform 1s cubic-bezier(.34,1.56,.64,1)">
+      </div>
+      <div style="position:absolute;bottom:-8px;left:92px;width:16px;height:16px;border-radius:50%;background:#fff;border:3px solid var(--surface)"></div>
+      <div style="position:absolute;bottom:4px;left:4px;font-size:9px;font-weight:700;color:rgba(255,91,91,.7)">SELL</div>
+      <div style="position:absolute;bottom:4px;right:4px;font-size:9px;font-weight:700;color:rgba(0,196,140,.7)">BUY</div>
+    </div>
+    <div style="font-size:22px;font-weight:800;letter-spacing:.5px;color:${vc}">${verdict}</div>
+    <div style="font-size:12px;color:var(--text3)">Score: ${score>0?'+':''}${score} / 100</div>
+  </div>`;
+}
+
+// ── RESEARCH ──────────────────────────────────────────────────────────────────
+async function renderResearch(p){
+  p.innerHTML=`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+      <input id="rsym" style="width:180px" value="${researchSymbol}" placeholder="Symbol e.g. AAPL"
+        onkeydown="if(event.key==='Enter'){researchSymbol=this.value.trim().toUpperCase();renderResearch(document.getElementById('page'))}"/>
+      <button class="btn btn-primary" onclick="researchSymbol=document.getElementById('rsym').value.trim().toUpperCase();analyzeSymbol=researchSymbol;renderResearch(document.getElementById('page'))">Research</button>
+      <button class="btn btn-ghost" onclick="analyzeSymbol=researchSymbol;goPage('analyze')">→ Chart</button>
+      <button class="btn btn-ghost" onclick="analyzeSymbol=researchSymbol;tradeMode='buy';goPage('trade')">→ Trade</button>
+    </div>
+    <div id="res-body"><div class="loader"><div class="spinner"></div></div></div>`;
+
+  const [q,res,bar]=await Promise.all([
+    GET('/api/quote/'+researchSymbol),
+    GET('/api/research/'+researchSymbol),
+    GET('/api/barometer/'+researchSymbol),
+  ]);
+
+  const rb=document.getElementById('res-body'); if(!rb)return;
+  const up=q.change>=0;
+  const name=res.name||researchSymbol;
+
+  function fmtCap(n){if(!n)return'—';if(n>=1e12)return'$'+(n/1e12).toFixed(2)+'T';if(n>=1e9)return'$'+(n/1e9).toFixed(2)+'B';if(n>=1e6)return'$'+(n/1e6).toFixed(2)+'M';return'$'+n.toFixed(0);}
+  function sc(label,val){return`<div class="stat-cell"><div class="stat-lbl">${label}</div><div class="stat-val">${val||'—'}</div></div>`;}
+
+  const recMap={strong_buy:'Strong Buy',buy:'Buy',hold:'Hold',sell:'Sell',strong_sell:'Strong Sell'};
+  const recColor={strong_buy:'var(--green)',buy:'var(--green)',hold:'var(--text)',sell:'var(--red)',strong_sell:'var(--red)'}[res.recommendation]||'var(--text)';
+
+  rb.innerHTML=`
+    <!-- Company Header -->
+    <div class="card" style="margin-bottom:16px">
+      <div style="display:flex;align-items:flex-start;gap:18px;flex-wrap:wrap">
+        ${coinIcon(researchSymbol,60)}
+        <div style="flex:1;min-width:200px">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+            <div style="font-size:24px;font-weight:800">${name}</div>
+            <span class="chg-badge ${up?'up-bg':'dn-bg'}">${up?'+':''}${q.change_pct||0}%</span>
+          </div>
+          ${res.sector?`<div style="font-size:12px;color:var(--text3);margin-bottom:10px">${res.sector}${res.industry?' · '+res.industry:''}</div>`:''}
+          ${res.description?`<div style="font-size:13px;color:var(--text2);line-height:1.7">${res.description}</div>`:'<div style="font-size:13px;color:var(--text3);font-style:italic">Fundamental data unavailable (requires internet access)</div>'}
+        </div>
+        <div style="text-align:right;min-width:140px">
+          <div style="font-size:32px;font-weight:800;letter-spacing:-1px">$${fmtPrice(q.price)}</div>
+          <div style="font-size:13px;font-weight:600;color:${up?'var(--green)':'var(--red)'};margin-top:2px">${up?'▲':'▼'} $${fmtPrice(Math.abs(q.change||0))} today</div>
+          ${res.website?`<a href="${res.website}" target="_blank" rel="noopener" style="font-size:11px;color:var(--accent);text-decoration:none;display:block;margin-top:8px">${res.website.replace(/https?:\/\//,'').replace(/\/$/,'')}</a>`:''}
+        </div>
+      </div>
+    </div>
+
+    <!-- Key Statistics -->
+    ${res.market_cap||res.pe_ratio||res.beta?`
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Key Statistics</div></div>
+      <div class="stats-grid">
+        ${sc('Market Cap',fmtCap(res.market_cap))}
+        ${sc('P/E Ratio',res.pe_ratio?.toFixed(2))}
+        ${sc('Forward P/E',res.forward_pe?.toFixed(2))}
+        ${sc('EPS (TTM)',res.eps!=null?'$'+res.eps.toFixed(2):'—')}
+        ${sc('Dividend Yield',res.dividend_yield!=null?(res.dividend_yield*100).toFixed(2)+'%':'—')}
+        ${sc('Beta',res.beta?.toFixed(2))}
+        ${sc('52W High',res.week52_high!=null?'$'+res.week52_high.toFixed(2):'—')}
+        ${sc('52W Low',res.week52_low!=null?'$'+res.week52_low.toFixed(2):'—')}
+        ${sc('Analyst Target',res.analyst_target!=null?'$'+res.analyst_target.toFixed(2):'—')}
+        ${sc('Recommendation',res.recommendation?`<span style="color:${recColor};font-size:12px">${recMap[res.recommendation]||res.recommendation}</span>`:'—')}
+        ${sc('# Analysts',res.num_analysts)}
+        ${sc('Avg Volume',res.avg_volume?fmtCap(res.avg_volume).replace('$',''):'—')}
+      </div>
+    </div>`:''}
+
+    <!-- News + Barometer -->
+    <div class="grid-col-2" style="align-items:start">
+      <div class="card">
+        <div class="card-header"><div class="card-title">Latest News</div></div>
+        ${res.news&&res.news.length?res.news.map(n=>{
+          const d=n.time?new Date(n.time*1000).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+          return`<a class="news-item" href="${n.url}" target="_blank" rel="noopener">
+            <div class="news-title">${n.title}</div>
+            <div class="news-meta">${n.publisher}${d?' · '+d:''}</div>
+          </a>`;
+        }).join(''):'<div style="color:var(--text3);padding:16px 0;font-size:13px">No news available — requires internet access</div>'}
+      </div>
+      <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">Technical Barometer</div></div>
+          ${bar.error?`<p style="color:var(--text3);font-size:13px;padding:8px 0">${bar.error}</p>`:buildGauge(bar.score,bar.verdict)}
+        </div>
+        ${bar.signals?`<div class="card">
+          <div class="card-header"><div class="card-title">Signal Breakdown</div></div>
+          ${bar.signals.map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)"><span style="font-size:12px;color:var(--text3)">${s.indicator}</span><span class="sig-pill sig-${s.color}">${s.signal}</span></div>`).join('')}
+        </div>`:''}
+      </div>
+    </div>`;
 }
 
 // ── DASHBOARD ─────────────────────────────────────────────────────────────────
@@ -660,11 +811,12 @@ async function renderAnalyze(p){
     </div>
     <div id="analyze-body"><div class="loader"><div class="spinner"></div></div></div>`;
 
-  const [q, chart, ind, sig] = await Promise.all([
+  const [q, chart, ind, sig, bar] = await Promise.all([
     GET(`/api/quote/${analyzeSymbol}`),
     GET(`/api/chart/${analyzeSymbol}?period=3mo`),
     GET(`/api/analyze/${analyzeSymbol}?period=6mo`),
     GET(`/api/signal/${analyzeSymbol}?strategy=${analyzeStrategy}&period=1y`),
+    GET(`/api/barometer/${analyzeSymbol}`),
   ]);
   const ab=document.getElementById('analyze-body'); if(!ab)return;
   if(q.error){ab.innerHTML=`<div class="card"><span style="color:var(--red)">${q.error}</span></div>`;return;}
@@ -694,8 +846,12 @@ async function renderAnalyze(p){
         <div class="chart-wrap-lg"><canvas id="main-chart"></canvas></div>
       </div>
 
-      <!-- Right column: indicators + backtest -->
+      <!-- Right column: barometer + indicators + backtest -->
       <div>
+        <div class="card" style="margin-bottom:16px">
+          <div class="card-header"><div class="card-title">Technical Barometer</div><button class="btn btn-ghost" style="padding:4px 10px;font-size:11px" onclick="researchSymbol='${analyzeSymbol}';goPage('research')">Full Research →</button></div>
+          ${!bar||bar.error?`<p style="color:var(--text3);font-size:12px">Barometer unavailable</p>`:buildGauge(bar.score,bar.verdict)+`<div style="margin-top:10px">${(bar.signals||[]).map(s=>`<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)"><span style="font-size:11px;color:var(--text3)">${s.indicator}</span><span class="sig-pill sig-${s.color}">${s.signal}</span></div>`).join('')}</div>`}
+        </div>
         <div class="card" style="margin-bottom:16px">
           <div class="card-header"><div class="card-title">Indicators</div></div>
           <div class="ind-grid">
@@ -815,9 +971,93 @@ function renderTrade(p){
           <div id="trade-sig-zone"><div class="loader" style="padding:20px"><div class="spinner"></div></div></div>
         </div>
       </div>
+    </div>
+
+    <!-- Live Trading: Alpaca Markets -->
+    <div class="card" style="margin-top:4px" id="broker-card">
+      <div class="card-header">
+        <div class="card-title">Live Trading · Alpaca Markets</div>
+        <span id="broker-status-badge" class="chg-badge" style="background:var(--surface2);color:var(--text3);font-size:11px">Checking...</span>
+      </div>
+      <div id="broker-body"><div class="loader" style="padding:20px"><div class="spinner"></div></div></div>
     </div>`;
   fetchTradeSym();
   loadTradeSig();
+  loadBrokerStatus();
+}
+
+async function loadBrokerStatus(){
+  const status=await GET('/api/broker/status');
+  const badge=document.getElementById('broker-status-badge');
+  const body=document.getElementById('broker-body');
+  if(!badge||!body)return;
+  if(!status.configured){
+    badge.textContent='Not Connected';badge.style.background='rgba(255,91,91,.12)';badge.style.color='var(--red)';
+    body.innerHTML=`<div class="broker-setup">
+      <strong style="color:var(--text);font-size:14px">Connect Alpaca to place real stock orders</strong><br>
+      Alpaca offers free paper trading (simulated money) and live trading with a funded account.<br><br>
+      <strong>Step 1:</strong> Create a free account at <a href="https://alpaca.markets" target="_blank" rel="noopener" style="color:var(--accent)">alpaca.markets</a><br>
+      <strong>Step 2:</strong> Go to <em>Paper Trading → API Keys → Generate Key</em><br>
+      <strong>Step 3:</strong> Set environment variables and restart the server:<br><br>
+      <code>export ALPACA_KEY=your_api_key_here</code><br>
+      <code>export ALPACA_SECRET=your_api_secret_here</code><br>
+      <code>export ALPACA_PAPER=true</code>&nbsp;&nbsp;<em style="color:var(--text3)"># use false for real money</em><br><br>
+      For Docker: add these under <code>environment:</code> in your <code>docker-compose.yml</code>.<br>
+      For Render.com: add them as Environment Variables in the service settings.
+    </div>`;
+    return;
+  }
+  const modeLabel=status.paper?'Paper Mode':'LIVE MODE';
+  const modeColor=status.paper?'var(--accent)':'var(--red)';
+  badge.textContent=modeLabel;badge.style.background=status.paper?'rgba(76,123,244,.15)':'rgba(255,91,91,.15)';badge.style.color=modeColor;
+  const acc=await GET('/api/broker/account');
+  if(acc.error){body.innerHTML=`<p style="color:var(--red);font-size:13px">${acc.error}</p>`;return;}
+  const sym=document.getElementById('trade-sym')?.value||analyzeSymbol;
+  body.innerHTML=`
+    <div class="grid-4" style="margin-bottom:16px">
+      <div class="ind-cell"><div class="ilabel">Cash</div><div class="ival" style="font-size:17px">$${fmtNum(acc.cash)}</div></div>
+      <div class="ind-cell"><div class="ilabel">Portfolio Value</div><div class="ival" style="font-size:17px">$${fmtNum(acc.portfolio_value)}</div></div>
+      <div class="ind-cell"><div class="ilabel">Buying Power</div><div class="ival" style="font-size:17px">$${fmtNum(acc.buying_power)}</div></div>
+      <div class="ind-cell"><div class="ilabel">Equity</div><div class="ival" style="font-size:17px">$${fmtNum(acc.equity)}</div></div>
+    </div>
+    ${!status.paper?'<div style="background:rgba(255,91,91,.1);border:1px solid var(--red);border-radius:10px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:var(--red);font-weight:600">⚠ LIVE MODE — All orders execute with real money!</div>':''}
+    <div class="grid-2" style="margin-bottom:14px">
+      <div>
+        <div class="form-row"><label>Symbol</label><input id="bkr-sym" value="${sym}" oninput="this.value=this.value.toUpperCase()"/></div>
+        <div class="form-row"><label>Shares (exact qty)</label><input id="bkr-qty" type="number" min="0.001" step="0.001" placeholder="e.g. 5"/></div>
+      </div>
+      <div>
+        <div class="form-row"><label>— Or Dollar Amount</label><input id="bkr-notional" type="number" min="1" placeholder="e.g. 500"/></div>
+        <div style="font-size:12px;color:var(--text3);line-height:1.7;margin-top:6px">Alpaca executes a market order immediately. Fractional shares supported.</div>
+      </div>
+    </div>
+    <div class="grid-2" style="margin-bottom:12px">
+      <button class="btn btn-green" onclick="submitBrokerOrder('buy')">▲ Buy ${modeLabel}</button>
+      <button class="btn btn-red" onclick="submitBrokerOrder('sell')">▼ Sell ${modeLabel}</button>
+    </div>
+    <div id="bkr-result"></div>`;
+}
+
+async function submitBrokerOrder(side){
+  const sym=document.getElementById('bkr-sym')?.value.trim().toUpperCase();
+  const qty=parseFloat(document.getElementById('bkr-qty')?.value);
+  const notional=parseFloat(document.getElementById('bkr-notional')?.value);
+  if(!sym){toast('Enter a symbol','err');return;}
+  if(!qty&&!notional){toast('Enter quantity or dollar amount','err');return;}
+  const body={symbol:sym};
+  if(qty) body.qty=qty; else body.notional=notional;
+  const r=await POST(side==='buy'?'/api/broker/buy':'/api/broker/sell',body);
+  const res=document.getElementById('bkr-result'); if(!res)return;
+  if(r.error){
+    res.innerHTML=`<div style="color:var(--red);font-size:13px;padding:10px 14px;background:rgba(255,91,91,.08);border-radius:8px">${r.error}</div>`;
+    toast(r.error,'err');
+  } else {
+    const o=r.order;
+    res.innerHTML=`<div style="color:var(--green);font-size:13px;padding:10px 14px;background:rgba(0,196,140,.08);border-radius:8px">
+      ✓ Order ${o.status}: ${(o.side||side).toUpperCase()} ${o.qty} × ${o.symbol}<br>
+      <span style="font-size:11px;color:var(--text3)">ID: ${o.id}</span></div>`;
+    toast(`${(o.side||side).toUpperCase()} order submitted for ${o.symbol}`,'ok');
+  }
 }
 
 let _tradePrice=0;
