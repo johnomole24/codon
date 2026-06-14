@@ -292,6 +292,37 @@ tr:hover td{background:rgba(255,255,255,.02)}
 </style>
 </head>
 <body>
+
+<!-- ── Auth Overlay ───────────────────────────────────────────────────────── -->
+<div id="auth-overlay" style="display:none;position:fixed;inset:0;z-index:9999;background:var(--bg);align-items:center;justify-content:center">
+  <div style="width:420px;background:var(--surface);border:1px solid var(--border);border-radius:18px;padding:36px;box-shadow:0 24px 80px rgba(0,0,0,.6)">
+    <div style="text-align:center;margin-bottom:28px">
+      <div style="font-size:26px;font-weight:800;letter-spacing:-.5px">Codon Trader</div>
+      <div style="font-size:13px;color:var(--text3);margin-top:5px">Trading · Learning · Execution</div>
+    </div>
+    <div class="trade-tabs" id="auth-tabs" style="margin-bottom:20px">
+      <div class="ttab buy active" onclick="showAuthTab('login')">Sign In</div>
+      <div class="ttab sell" onclick="showAuthTab('register')">Register</div>
+    </div>
+    <!-- Login form -->
+    <div id="auth-login-form">
+      <div class="form-row"><label>Email</label><input id="auth-email" type="email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <div class="form-row"><label>Password</label><input id="auth-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doLogin()"/></div>
+      <button class="btn btn-primary btn-full" onclick="doLogin()">Sign In</button>
+      <div id="auth-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:16px"></div>
+    </div>
+    <!-- Register form -->
+    <div id="auth-reg-form" style="display:none">
+      <div class="form-row"><label>Full Name</label><input id="reg-name" placeholder="John Doe" onkeydown="if(event.key==='Enter')doRegister()"/></div>
+      <div class="form-row"><label>Email</label><input id="reg-email" type="email" placeholder="you@example.com" onkeydown="if(event.key==='Enter')doRegister()"/></div>
+      <div class="form-row"><label>Password (6+ chars)</label><input id="reg-pass" type="password" placeholder="••••••••" onkeydown="if(event.key==='Enter')doRegister()"/></div>
+      <button class="btn btn-primary btn-full" onclick="doRegister()">Create Account</button>
+      <div id="reg-err" style="color:var(--red);font-size:13px;text-align:center;margin-top:10px;min-height:16px"></div>
+    </div>
+    <div style="text-align:center;margin-top:18px;font-size:12px;color:var(--text3)">Paper trading included free · No real money required to start</div>
+  </div>
+</div>
+
 <div id="app">
   <!-- Sidebar -->
   <aside id="sidebar">
@@ -348,11 +379,15 @@ tr:hover td{background:rgba(255,255,255,.02)}
     </div>
 
     <div class="sidebar-bottom">
-      <div class="sidebar-user">
-        <div class="avatar">CT</div>
-        <div>
-          <div class="user-name">Codon Trader</div>
-          <div class="user-sub">Paper account</div>
+      <div class="nav-item" onclick="goPage('wallet')" id="ni-wallet" style="margin-bottom:6px">
+        <svg viewBox="0 0 24 24"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+        Wallet
+      </div>
+      <div class="sidebar-user" onclick="if(currentUser){if(confirm('Sign out of Codon Trader?'))doLogout()}" title="Click to sign out" style="cursor:pointer">
+        <div class="avatar" id="sidebar-avatar">CT</div>
+        <div style="flex:1;min-width:0">
+          <div class="user-name" id="sidebar-user-name">Codon Trader</div>
+          <div class="user-sub" id="sidebar-user-sub">Paper account</div>
         </div>
       </div>
     </div>
@@ -447,10 +482,10 @@ function goPage(name){
   document.getElementById('ni-'+name)?.classList.add('active');
   document.getElementById('topbar-title').textContent =
     {dashboard:'Dashboard',markets:'Markets',research:'Research',analyze:'Analyze',
-     trade:'Trade',portfolio:'Portfolio',learn:'Lessons',glossary:'Glossary'}[name]||name;
+     trade:'Trade',portfolio:'Portfolio',wallet:'Wallet',learn:'Lessons',glossary:'Glossary'}[name]||name;
   if(priceChart){priceChart.destroy();priceChart=null;}
   const fns={dashboard:renderDashboard,markets:renderMarkets,research:renderResearch,analyze:renderAnalyze,
-    trade:renderTrade,portfolio:renderPortfolio,learn:renderLearn,glossary:renderGlossary};
+    trade:renderTrade,portfolio:renderPortfolio,wallet:renderWallet,learn:renderLearn,glossary:renderGlossary};
   fns[name]?.(document.getElementById('page'));
 }
 let researchSymbol='AAPL';
@@ -1280,9 +1315,176 @@ function renderGlossaryList(terms){
   </div>`;
 }
 
+// ── Auth ──────────────────────────────────────────────────────────────────────
+let currentUser = null;
+
+function showAuthOverlay(){
+  const el=document.getElementById('auth-overlay');
+  el.style.display='flex';
+}
+function hideAuthOverlay(){
+  document.getElementById('auth-overlay').style.display='none';
+}
+function showAuthTab(tab){
+  document.getElementById('auth-login-form').style.display=tab==='login'?'':'none';
+  document.getElementById('auth-reg-form').style.display=tab==='register'?'':'none';
+  document.querySelectorAll('#auth-tabs .ttab').forEach((t,i)=>{
+    t.classList.toggle('active',(tab==='login'&&i===0)||(tab==='register'&&i===1));
+  });
+}
+function _setUser(u){
+  currentUser=u;
+  document.getElementById('sidebar-avatar').textContent=(u.name||u.email).slice(0,2).toUpperCase();
+  document.getElementById('sidebar-user-name').textContent=u.name||u.email;
+  document.getElementById('sidebar-user-sub').textContent=`$${(u.wallet_balance||0).toFixed(2)} wallet`;
+  if(u.is_admin){
+    // Show admin link in sidebar
+    let al=document.getElementById('ni-admin');
+    if(!al){
+      al=document.createElement('div');
+      al.className='nav-item';al.id='ni-admin';
+      al.innerHTML='<svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> Admin Panel';
+      al.onclick=()=>location.href='/admin';
+      document.getElementById('ni-wallet').before(al);
+    }
+  }
+}
+async function doLogin(){
+  const email=document.getElementById('auth-email').value.trim();
+  const password=document.getElementById('auth-pass').value;
+  const err=document.getElementById('auth-err');
+  if(!email||!password){err.textContent='Enter email and password';return;}
+  err.textContent='Loading…';
+  const r=await POST('/api/auth/login',{email,password});
+  if(r.error){err.textContent=r.error;return;}
+  _setUser(r.user);
+  hideAuthOverlay();
+  toast('Welcome back, '+(r.user.name||r.user.email)+'!','ok');
+  goPage('dashboard');
+}
+async function doRegister(){
+  const name=document.getElementById('reg-name').value.trim();
+  const email=document.getElementById('reg-email').value.trim();
+  const password=document.getElementById('reg-pass').value;
+  const err=document.getElementById('reg-err');
+  if(!email||!password){err.textContent='Email and password required';return;}
+  if(password.length<6){err.textContent='Password must be 6+ characters';return;}
+  err.textContent='Creating account…';
+  const r=await POST('/api/auth/register',{name,email,password});
+  if(r.error){err.textContent=r.error;return;}
+  _setUser(r.user);
+  hideAuthOverlay();
+  toast('Account created! Welcome to Codon Trader.','ok');
+  goPage('dashboard');
+}
+async function doLogout(){
+  await POST('/api/auth/logout',{});
+  currentUser=null;
+  document.getElementById('sidebar-avatar').textContent='CT';
+  document.getElementById('sidebar-user-name').textContent='Codon Trader';
+  document.getElementById('sidebar-user-sub').textContent='Paper account';
+  showAuthOverlay();
+}
+
+// ── WALLET ────────────────────────────────────────────────────────────────────
+async function renderWallet(p){
+  if(!currentUser){
+    p.innerHTML=`<div class="card" style="text-align:center;padding:48px">
+      <div style="font-size:18px;font-weight:700;margin-bottom:12px">Sign in to access your wallet</div>
+      <button class="btn btn-primary" onclick="showAuthOverlay()">Sign In / Register</button>
+    </div>`;
+    return;
+  }
+  p.innerHTML=`<div class="loader"><div class="spinner"></div></div>`;
+  const w=await GET('/api/wallet');
+  const stripe_ok=await GET('/api/broker/status').then(()=>true).catch(()=>false);
+  const stripeSet=!!w.balance||true; // always try
+
+  p.innerHTML=`
+    <!-- Wallet hero -->
+    <div class="grid-2" style="margin-bottom:16px;align-items:start">
+      <div class="hero-card">
+        <div class="hero-label">Real Wallet Balance</div>
+        <div class="hero-value">$${(w.balance||0).toFixed(2)}</div>
+        <div class="hero-sub">Available for live trading via Alpaca</div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">Paper Trading Balance</div></div>
+        <div style="font-size:32px;font-weight:800;letter-spacing:-.5px;margin-bottom:6px">$10,000.00</div>
+        <div style="font-size:13px;color:var(--text3)">Simulated balance — practice with no real money</div>
+        <button class="btn btn-ghost btn-full" style="margin-top:14px" onclick="goPage('trade')">Go to Trade →</button>
+      </div>
+    </div>
+
+    <!-- Deposit section -->
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header"><div class="card-title">Add Funds to Wallet</div></div>
+      <div class="grid-2" style="margin-bottom:14px">
+        ${[50,100,250,500,1000,5000].map(a=>`<button class="btn btn-ghost" onclick="setDepositAmt(${a})">$${a.toLocaleString()}</button>`).join('')}
+      </div>
+      <div class="grid-2" style="align-items:flex-end">
+        <div class="form-row" style="margin:0"><label>Custom Amount</label><input id="dep-amount" type="number" min="10" max="50000" placeholder="Enter amount in USD"/></div>
+        <button class="btn btn-primary btn-full" onclick="startDeposit()">Add Funds via Stripe →</button>
+      </div>
+      <div id="dep-note" style="margin-top:12px;font-size:12px;color:var(--text3);line-height:1.7">
+        Payments are processed securely by <strong style="color:var(--text)">Stripe</strong>. Funds are credited to your wallet instantly after payment confirmation.
+        Test card: <code style="background:var(--surface2);padding:2px 6px;border-radius:4px;font-size:11px">4242 4242 4242 4242</code> (any expiry, any CVV).
+      </div>
+      <div id="dep-err" style="color:var(--red);font-size:13px;margin-top:8px"></div>
+    </div>
+
+    <!-- Transaction history -->
+    <div class="card">
+      <div class="card-header"><div class="card-title">Transaction History</div></div>
+      ${w.transactions&&w.transactions.length?`
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Date</th><th>Type</th><th>Amount</th><th>Status</th><th>Note</th></tr></thead>
+          <tbody>
+            ${w.transactions.map(t=>`<tr>
+              <td style="color:var(--text3)">${new Date(t.created_at).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</td>
+              <td><span class="chg-badge" style="background:rgba(76,123,244,.12);color:var(--accent)">${t.type}</span></td>
+              <td style="font-weight:700;color:${t.amount>=0?'var(--green)':'var(--red)'}">${t.amount>=0?'+':''}$${Math.abs(t.amount).toFixed(2)}</td>
+              <td><span class="chg-badge ${t.status==='completed'?'up-bg':'dn-bg'}">${t.status}</span></td>
+              <td style="font-size:12px;color:var(--text3)">${t.note||'—'}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`:'<div class="empty">No transactions yet</div>'}
+    </div>`;
+}
+function setDepositAmt(a){document.getElementById('dep-amount').value=a;}
+async function startDeposit(){
+  const amount=parseFloat(document.getElementById('dep-amount')?.value);
+  const err=document.getElementById('dep-err');
+  if(!amount||amount<10){err.textContent='Enter a minimum of $10';return;}
+  err.textContent='';
+  const r=await POST('/api/wallet/deposit',{amount});
+  if(r.error){err.textContent=r.error;return;}
+  // Redirect to Stripe Checkout
+  location.href=r.checkout_url;
+}
+
 // ── Boot ──────────────────────────────────────────────────────────────────────
 if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
-goPage('dashboard');
+// Handle Stripe return
+if(location.search.includes('funded=1')){
+  history.replaceState({},'','/');
+  setTimeout(()=>toast('Payment successful! Wallet credited.','ok'),600);
+} else if(location.search.includes('funded=0')){
+  history.replaceState({},'','/');
+  setTimeout(()=>toast('Payment cancelled','err'),400);
+}
+// Also handle admin login redirect
+if(location.search.includes('admin_login=1')){
+  history.replaceState({},'','/');
+}
+// Check auth then boot
+GET('/api/auth/me').then(me=>{
+  if(me&&!me.error){_setUser(me);}
+  else{showAuthOverlay();}
+  goPage('dashboard');
+});
 </script>
 </body>
 </html>

@@ -13,27 +13,38 @@ PORTFOLIO_DIR = Path.home() / ".codon_trading"
 PORTFOLIO_FILE = PORTFOLIO_DIR / "portfolio.json"
 
 
-def _load() -> dict:
-    if PORTFOLIO_FILE.exists():
-        with open(PORTFOLIO_FILE) as f:
-            return json.load(f)
+def _user_file(user_id=None) -> Path:
+    if user_id:
+        d = PORTFOLIO_DIR / "users" / str(user_id)
+        d.mkdir(parents=True, exist_ok=True)
+        return d / "portfolio.json"
+    return PORTFOLIO_FILE
+
+
+def _load(user_id=None) -> dict:
+    f = _user_file(user_id)
+    if f.exists():
+        with open(f) as fp:
+            return json.load(fp)
     return {
         "cash": 10_000.0,
-        "positions": {},   # symbol -> {shares, avg_price}
+        "positions": {},
         "history": [],
         "created": datetime.datetime.now().isoformat(),
     }
 
 
-def _save(state: dict) -> None:
-    PORTFOLIO_DIR.mkdir(parents=True, exist_ok=True)
-    with open(PORTFOLIO_FILE, "w") as f:
+def _save(state: dict, user_id=None) -> None:
+    path = _user_file(user_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w") as f:
         json.dump(state, f, indent=2)
 
 
 class Portfolio:
-    def __init__(self):
-        self._state = _load()
+    def __init__(self, user_id=None):
+        self._uid = user_id
+        self._state = _load(user_id)
 
     @property
     def cash(self) -> float:
@@ -71,7 +82,7 @@ class Portfolio:
             "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self._state["history"].append(trade)
-        _save(self._state)
+        _save(self._state, self._uid)
         return trade
 
     def sell(self, symbol: str, shares: int, price: float) -> dict:
@@ -107,7 +118,7 @@ class Portfolio:
             "date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         self._state["history"].append(trade)
-        _save(self._state)
+        _save(self._state, self._uid)
         return trade
 
     def reset(self, initial_cash: float = 10_000.0) -> None:
@@ -118,7 +129,7 @@ class Portfolio:
             "history": [],
             "created": datetime.datetime.now().isoformat(),
         }
-        _save(self._state)
+        _save(self._state, self._uid)
 
     def summary(self, live_prices: dict[str, float] | None = None) -> dict:
         """

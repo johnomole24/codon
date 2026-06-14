@@ -21,7 +21,7 @@ from __future__ import annotations
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, send_from_directory, redirect, abort
 import pandas as pd
 import numpy as np
 
@@ -33,6 +33,36 @@ from trading.portfolio import Portfolio
 from trading import executor as ex
 
 app = Flask(__name__, static_folder="static", static_url_path="")
+
+# ── Auth + DB setup ───────────────────────────────────────────────────────────
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-change-in-production-32char")
+
+from trading.app.db import db, User, WalletTransaction, init_db
+from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+
+init_db(app)
+
+login_manager = LoginManager(app)
+
+@login_manager.user_loader
+def _load_user(uid):
+    return User.query.get(int(uid))
+
+@login_manager.unauthorized_handler
+def _unauth():
+    return jsonify({"error": "Authentication required"}), 401
+
+def _uid():
+    return current_user.id if current_user.is_authenticated else None
+
+def _admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def _wrap(*a, **kw):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            abort(403)
+        return f(*a, **kw)
+    return _wrap
 
 # ── Static / PWA ──────────────────────────────────────────────────────────────
 
@@ -164,7 +194,7 @@ def api_backtest():
 @app.get("/api/portfolio")
 def api_portfolio():
     try:
-        portfolio = Portfolio()
+        portfolio = Portfolio(_uid())
         symbols = list(portfolio.positions.keys())
         live_prices = {}
         if symbols:
@@ -187,7 +217,7 @@ def api_buy():
     risk_pct = float(body.get("risk_pct", 1.0))
     stop_loss = body.get("stop_loss")
     try:
-        portfolio = Portfolio()
+        portfolio = Portfolio(_uid())
         trade = ex.buy(
             portfolio, symbol,
             shares=int(shares) if shares else None,
@@ -207,7 +237,7 @@ def api_sell():
     shares = body.get("shares")
     price = body.get("price")
     try:
-        portfolio = Portfolio()
+        portfolio = Portfolio(_uid())
         trade = ex.sell(
             portfolio, symbol,
             shares=int(shares) if shares else None,
@@ -222,7 +252,7 @@ def api_sell():
 def api_reset():
     try:
         capital = float((request.get_json() or {}).get("capital", 10_000))
-        Portfolio().reset(capital)
+        Portfolio(_uid()).reset(capital)
         return jsonify({"success": True, "cash": capital})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
@@ -241,6 +271,208 @@ def api_size():
         return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 400
+
+
+# ── Auth ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/auth/me")
+def api_me():
+    if current_user.is_authenticated:
+        return jsonify(current_user.to_dict())
+    return jsonify({"error": "Not authenticated"}), 401
+
+
+@app.post("/api/auth/register")
+def api_register():
+    body = request.get_json() or {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    name = (body.get("name") or "").strip()
+    if not email or not password:
+        return jsonify({"error": "Email and password are required"}), 400
+    if len(password) < 6:
+        return jsonify({"error": "Password must be at least 6 characters"}), 400
+    if User.query.filter_by(email=email).first():
+        return jsonify({"error": "Email is already registered"}), 400
+    user = User(email=email, name=name)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    login_user(user, remember=True)
+    return jsonify({"success": True, "user": user.to_dict()})
+
+
+@app.post("/api/auth/login")
+def api_login():
+    body = request.get_json() or {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password):
+        return jsonify({"error": "Invalid email or password"}), 401
+    if not user.is_active:
+        return jsonify({"error": "Account has been disabled — contact admin"}), 403
+    login_user(user, remember=True)
+    return jsonify({"success": True, "user": user.to_dict()})
+
+
+@app.post("/api/auth/logout")
+def api_logout():
+    logout_user()
+    return jsonify({"success": True})
+
+
+# ── Wallet ────────────────────────────────────────────────────────────────────
+
+@app.get("/api/wallet")
+@login_required
+def api_wallet():
+    txs = (WalletTransaction.query
+           .filter_by(user_id=current_user.id)
+           .order_by(WalletTransaction.created_at.desc())
+           .limit(30).all())
+    return jsonify({
+        "balance": round(current_user.wallet_balance, 2),
+        "transactions": [t.to_dict() for t in txs],
+    })
+
+
+@app.post("/api/wallet/deposit")
+@login_required
+def api_wallet_deposit():
+    from trading import payments as pay
+    body = request.get_json() or {}
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    if amount < 10:
+        return jsonify({"error": "Minimum deposit is $10"}), 400
+    if amount > 50_000:
+        return jsonify({"error": "Maximum single deposit is $50,000"}), 400
+    if not pay.is_configured():
+        return jsonify({"error": "STRIPE_SECRET_KEY is not configured"}), 400
+    try:
+        base = request.host_url.rstrip("/")
+        url = pay.create_checkout_session(current_user.id, amount, base)
+        # Record pending transaction
+        tx = WalletTransaction(
+            user_id=current_user.id, type="deposit", amount=amount,
+            status="pending", note=f"Stripe checkout ${amount:.2f}",
+        )
+        db.session.add(tx)
+        db.session.commit()
+        return jsonify({"success": True, "checkout_url": url})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.post("/api/payment/webhook")
+def api_payment_webhook():
+    from trading import payments as pay
+    event = pay.parse_webhook(request.get_data(), request.headers.get("Stripe-Signature", ""))
+    if event is None:
+        return jsonify({"error": "Invalid signature"}), 400
+    if event.get("type") == "checkout.session.completed":
+        sess = event["data"]["object"]
+        user_id = int(sess.get("client_reference_id") or 0)
+        amount = sess.get("amount_total", 0) / 100
+        sid = sess.get("id", "")
+        # Idempotency check
+        if WalletTransaction.query.filter_by(stripe_session_id=sid, status="completed").first():
+            return jsonify({"status": "already_processed"})
+        user = User.query.get(user_id)
+        if user:
+            user.wallet_balance += amount
+            tx = (WalletTransaction.query.filter_by(stripe_session_id=sid).first()
+                  or WalletTransaction(user_id=user_id, type="deposit", amount=amount))
+            tx.status = "completed"
+            tx.stripe_session_id = sid
+            tx.note = f"Stripe payment ${amount:.2f} confirmed"
+            db.session.add(tx)
+            db.session.commit()
+    return jsonify({"status": "ok"})
+
+
+# ── Admin ─────────────────────────────────────────────────────────────────────
+
+@app.get("/admin")
+def admin_page():
+    if not current_user.is_authenticated or not current_user.is_admin:
+        return redirect("/?admin_login=1")
+    return send_from_directory(app.static_folder, "admin.html")
+
+
+@app.get("/api/admin/stats")
+@_admin_required
+def api_admin_stats():
+    total_users = User.query.count()
+    active_users = User.query.filter_by(is_active=True).count()
+    total_deposited = (
+        db.session.query(db.func.sum(WalletTransaction.amount))
+        .filter_by(type="deposit", status="completed").scalar() or 0
+    )
+    recent_txs = (WalletTransaction.query
+                  .order_by(WalletTransaction.created_at.desc()).limit(25).all())
+    return jsonify({
+        "total_users": total_users,
+        "active_users": active_users,
+        "total_deposited": round(float(total_deposited), 2),
+        "recent_transactions": [t.to_dict() for t in recent_txs],
+    })
+
+
+@app.get("/api/admin/users")
+@_admin_required
+def api_admin_users():
+    users = User.query.order_by(User.created_at.desc()).all()
+    result = []
+    for u in users:
+        total_dep = (
+            db.session.query(db.func.sum(WalletTransaction.amount))
+            .filter_by(user_id=u.id, type="deposit", status="completed").scalar() or 0
+        )
+        d = u.to_dict()
+        d["total_deposited"] = round(float(total_dep), 2)
+        result.append(d)
+    return jsonify(result)
+
+
+@app.get("/api/admin/users/<int:uid>/transactions")
+@_admin_required
+def api_admin_user_txs(uid):
+    txs = (WalletTransaction.query.filter_by(user_id=uid)
+           .order_by(WalletTransaction.created_at.desc()).limit(50).all())
+    return jsonify([t.to_dict() for t in txs])
+
+
+@app.post("/api/admin/users/<int:uid>/toggle")
+@_admin_required
+def api_admin_toggle(uid):
+    user = User.query.get_or_404(uid)
+    if user.is_admin:
+        return jsonify({"error": "Cannot disable an admin account"}), 400
+    user.is_active = not user.is_active
+    db.session.commit()
+    return jsonify({"success": True, "is_active": user.is_active})
+
+
+@app.post("/api/admin/users/<int:uid>/adjust")
+@_admin_required
+def api_admin_adjust(uid):
+    user = User.query.get_or_404(uid)
+    body = request.get_json() or {}
+    try:
+        amount = float(body.get("amount", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    note = (body.get("note") or "Admin adjustment").strip()
+    user.wallet_balance = max(0.0, user.wallet_balance + amount)
+    tx = WalletTransaction(user_id=uid, type="adjustment", amount=amount,
+                           status="completed", note=note)
+    db.session.add(tx)
+    db.session.commit()
+    return jsonify({"success": True, "new_balance": round(user.wallet_balance, 2)})
 
 
 # ── Research & Barometer ─────────────────────────────────────────────────────

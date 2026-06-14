@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Codon Admin</title>
+<style>
+  :root{--bg:#0B0D1E;--surface:#12172A;--surface2:#1C2040;--surface3:#252B52;
+    --border:#252B52;--accent:#4C7BF4;--accent2:#6C3BF4;--green:#00C48C;--red:#FF5B5B;
+    --yellow:#FFD700;--text:#E8EAFB;--text2:#A8AECB;--text3:#5D638A;--radius:14px}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:14px;min-height:100vh}
+  a{color:var(--accent);text-decoration:none}
+  input,select{background:var(--surface2);border:1px solid var(--border);border-radius:8px;
+    padding:9px 12px;color:var(--text);font-size:13px;outline:none;width:100%}
+  input:focus{border-color:var(--accent)}
+  button{border:none;border-radius:9px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;transition:.15s}
+  button:active{opacity:.85}
+  .btn-primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+  .btn-ghost{background:var(--surface2);color:var(--text2);border:1px solid var(--border)}
+  .btn-sm{padding:5px 12px;font-size:12px;border-radius:7px}
+  .btn-green{background:var(--green);color:#000}
+  .btn-red{background:var(--red);color:#fff}
+
+  /* Layout */
+  header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 28px;
+    display:flex;align-items:center;justify-content:space-between;height:60px;position:sticky;top:0;z-index:100}
+  .header-brand{display:flex;align-items:center;gap:12px}
+  .header-brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+  .header-brand span{font-size:17px;font-weight:800}
+  .header-brand small{font-size:11px;color:var(--text3);font-weight:600;letter-spacing:.5px;text-transform:uppercase}
+  .header-actions{display:flex;align-items:center;gap:12px}
+  main{max-width:1200px;margin:0 auto;padding:28px 24px}
+
+  /* Stats row */
+  .stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
+  .stat-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+  .stat-box .lbl{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:6px}
+  .stat-box .val{font-size:28px;font-weight:800;letter-spacing:-.5px}
+  .stat-box .sub{font-size:12px;color:var(--text3);margin-top:4px}
+
+  /* Cards */
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px 24px;margin-bottom:20px}
+  .card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+  .card-title{font-size:12px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text2)}
+
+  /* Table */
+  .tbl-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  th{font-size:11px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);padding:0 10px 10px;text-align:left;white-space:nowrap}
+  td{padding:12px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+  tr:last-child td{border-bottom:none}
+  tr.clickable:hover td{background:rgba(255,255,255,.02);cursor:pointer}
+  .badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .badge-green{background:rgba(0,196,140,.15);color:var(--green)}
+  .badge-red{background:rgba(255,91,91,.15);color:var(--red)}
+  .badge-blue{background:rgba(76,123,244,.15);color:var(--accent)}
+  .avatar{width:32px;height:32px;border-radius:50%;background:rgba(76,123,244,.2);color:var(--accent);
+    display:inline-flex;align-items:center;justify-content:center;font-weight:800;font-size:11px;margin-right:8px;flex-shrink:0}
+
+  /* Search */
+  .search-wrap{position:relative;max-width:320px}
+  .search-wrap svg{position:absolute;left:10px;top:50%;transform:translateY(-50%);width:14px;height:14px;stroke:var(--text3);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .search-wrap input{padding-left:34px}
+
+  /* Transaction sub-row */
+  .tx-row{background:var(--surface2)}
+  .tx-row td{padding:10px 14px;font-size:12px;color:var(--text2)}
+
+  /* Modal */
+  #modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:999;align-items:center;justify-content:center}
+  #modal-bg.show{display:flex}
+  .modal{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:28px;width:420px;max-width:95vw}
+  .modal h3{font-size:16px;font-weight:800;margin-bottom:18px}
+  .form-row{margin-bottom:14px}
+  .form-row label{display:block;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:var(--text3);margin-bottom:5px}
+  .modal-actions{display:flex;gap:10px;margin-top:20px}
+  .modal-actions button{flex:1}
+  #modal-err{color:var(--red);font-size:12px;margin-top:8px;min-height:16px}
+
+  /* Toast */
+  #toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(16px);
+    background:var(--surface3);border:1px solid var(--border);padding:11px 22px;border-radius:30px;
+    font-size:13px;font-weight:600;opacity:0;transition:.25s;z-index:9999;pointer-events:none;white-space:nowrap}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+  #toast.ok{border-color:var(--green);color:var(--green)}
+  #toast.err{border-color:var(--red);color:var(--red)}
+
+  .empty{text-align:center;padding:40px;color:var(--text3)}
+  .loader{display:flex;justify-content:center;padding:40px}
+  .spinner{width:24px;height:24px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-brand">
+    <div class="dot"></div>
+    <div>
+      <span>Codon Trader</span>
+      <small style="display:block;margin-top:1px">Admin Panel</small>
+    </div>
+  </div>
+  <div class="header-actions">
+    <span id="admin-email" style="font-size:13px;color:var(--text3)"></span>
+    <a href="/" class="btn btn-ghost btn-sm">← App</a>
+    <button class="btn-ghost btn-sm" onclick="doLogout()">Sign Out</button>
+  </div>
+</header>
+
+<main>
+  <!-- Stats -->
+  <div class="stats-row" id="stats-row">
+    <div class="stat-box"><div class="lbl">Total Users</div><div class="val" id="s-users">—</div></div>
+    <div class="stat-box"><div class="lbl">Active Users</div><div class="val" id="s-active">—</div></div>
+    <div class="stat-box"><div class="lbl">Total Deposited</div><div class="val" id="s-deposited">—</div><div class="sub">via Stripe</div></div>
+    <div class="stat-box"><div class="lbl">Admin</div><div class="val" style="font-size:18px;padding-top:4px" id="s-me">—</div></div>
+  </div>
+
+  <!-- Users -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Users</div>
+      <div class="search-wrap">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input id="user-search" placeholder="Search by name or email…" oninput="filterUsers()"/>
+      </div>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>User</th>
+            <th>Wallet Balance</th>
+            <th>Total Deposited</th>
+            <th>Status</th>
+            <th>Joined</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="users-tbody">
+          <tr><td colspan="6" class="loader"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">Recent Transactions</div>
+      <span style="font-size:12px;color:var(--text3)">Last 25</span>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>User</th><th>Type</th><th>Amount</th><th>Status</th><th>Note</th><th>Date</th></tr>
+        </thead>
+        <tbody id="txs-tbody">
+          <tr><td colspan="6" class="loader"><div class="spinner"></div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<!-- Adjust Wallet Modal -->
+<div id="modal-bg">
+  <div class="modal">
+    <h3>Adjust Wallet — <span id="modal-user-name"></span></h3>
+    <div class="form-row">
+      <label>Amount (use negative to deduct)</label>
+      <input id="modal-amount" type="number" step="0.01" placeholder="e.g. 100 or -50"/>
+    </div>
+    <div class="form-row">
+      <label>Note / Reason</label>
+      <input id="modal-note" placeholder="e.g. Promotional credit"/>
+    </div>
+    <div id="modal-err"></div>
+    <div class="modal-actions">
+      <button class="btn-primary" onclick="submitAdjust()">Apply</button>
+      <button class="btn-ghost" onclick="closeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let _users = [];
+let _adjustUid = null;
+
+const fmtDate = iso => new Date(iso).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'});
+const fmtMoney = n => '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+
+async function GET(url) {
+  const r = await fetch(url);
+  if (r.status === 401 || r.status === 403) { location.href = '/'; return {}; }
+  return r.json();
+}
+async function POST(url, body) {
+  const r = await fetch(url, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  return r.json();
+}
+
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.className = 'show ' + type;
+  setTimeout(() => el.className = '', 2800);
+}
+
+async function init() {
+  // Check auth and load data in parallel
+  const [me, stats, users, txs] = await Promise.all([
+    GET('/api/auth/me'),
+    GET('/api/admin/stats'),
+    GET('/api/admin/users'),
+    Promise.resolve(null),
+  ]);
+
+  if (me.error) { location.href = '/'; return; }
+  document.getElementById('admin-email').textContent = me.email;
+  document.getElementById('s-me').textContent = me.name || me.email;
+
+  // Stats
+  document.getElementById('s-users').textContent = stats.total_users ?? '—';
+  document.getElementById('s-active').textContent = stats.active_users ?? '—';
+  document.getElementById('s-deposited').textContent = stats.total_deposited != null ? fmtMoney(stats.total_deposited) : '—';
+
+  // Users table
+  _users = users;
+  renderUsers(_users);
+
+  // Recent transactions
+  renderTxs(stats.recent_transactions || []);
+}
+
+function renderUsers(list) {
+  const tbody = document.getElementById('users-tbody');
+  if (!list.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No users yet</td></tr>'; return; }
+  tbody.innerHTML = list.map(u => `
+    <tr class="clickable" onclick="toggleUserTxs(${u.id}, this)">
+      <td>
+        <div style="display:flex;align-items:center">
+          <div class="avatar">${(u.name||u.email).slice(0,2).toUpperCase()}</div>
+          <div>
+            <div style="font-weight:700">${u.name||'—'}</div>
+            <div style="font-size:11px;color:var(--text3)">${u.email}${u.is_admin?' · <span style="color:var(--accent)">Admin</span>':''}</div>
+          </div>
+        </div>
+      </td>
+      <td style="font-weight:700">${fmtMoney(u.wallet_balance)}</td>
+      <td>${fmtMoney(u.total_deposited)}</td>
+      <td><span class="badge ${u.is_active?'badge-green':'badge-red'}">${u.is_active?'Active':'Disabled'}</span></td>
+      <td style="color:var(--text3)">${fmtDate(u.created_at)}</td>
+      <td onclick="event.stopPropagation()">
+        <div style="display:flex;gap:6px">
+          <button class="btn-ghost btn-sm" onclick="openAdjust(${u.id},'${u.name||u.email}')">Adjust</button>
+          ${!u.is_admin?`<button class="btn-sm ${u.is_active?'btn-red':'btn-green'}" onclick="toggleUser(${u.id},this)">${u.is_active?'Disable':'Enable'}</button>`:''}
+        </div>
+      </td>
+    </tr>
+    <tr id="txrow-${u.id}" style="display:none" class="tx-row">
+      <td colspan="6" id="txcell-${u.id}"><div class="loader"><div class="spinner"></div></div></td>
+    </tr>`).join('');
+}
+
+function renderTxs(txs) {
+  const tbody = document.getElementById('txs-tbody');
+  if (!txs.length) { tbody.innerHTML = '<tr><td colspan="6" class="empty">No transactions yet</td></tr>'; return; }
+  // Build user lookup from _users
+  const userMap = {};
+  _users.forEach(u => userMap[u.id] = u.name || u.email);
+  tbody.innerHTML = txs.map(t => `
+    <tr>
+      <td>${userMap[t.user_id] || '#'+t.user_id}</td>
+      <td><span class="badge badge-blue">${t.type}</span></td>
+      <td style="font-weight:700;color:${t.amount>=0?'var(--green)':'var(--red)'}">${t.amount>=0?'+':''}${fmtMoney(t.amount)}</td>
+      <td><span class="badge ${t.status==='completed'?'badge-green':'badge-red'}">${t.status}</span></td>
+      <td style="color:var(--text3);font-size:12px">${t.note||'—'}</td>
+      <td style="color:var(--text3)">${fmtDate(t.created_at)}</td>
+    </tr>`).join('');
+}
+
+async function toggleUserTxs(uid, row) {
+  const txRow = document.getElementById('txrow-'+uid);
+  const cell = document.getElementById('txcell-'+uid);
+  if (txRow.style.display === 'none') {
+    txRow.style.display = '';
+    cell.innerHTML = '<div class="loader"><div class="spinner"></div></div>';
+    const txs = await GET('/api/admin/users/'+uid+'/transactions');
+    if (!txs.length) { cell.innerHTML = '<span style="color:var(--text3)">No transactions</span>'; return; }
+    cell.innerHTML = `<table style="width:100%">
+      ${txs.map(t=>`<tr>
+        <td style="color:var(--text3);font-size:12px">${fmtDate(t.created_at)}</td>
+        <td><span class="badge badge-blue">${t.type}</span></td>
+        <td style="font-weight:700;color:${t.amount>=0?'var(--green)':'var(--red)'}">${t.amount>=0?'+':''}${fmtMoney(t.amount)}</td>
+        <td><span class="badge ${t.status==='completed'?'badge-green':'badge-red'}">${t.status}</span></td>
+        <td style="font-size:12px;color:var(--text3)">${t.note||''}</td>
+      </tr>`).join('')}
+    </table>`;
+  } else {
+    txRow.style.display = 'none';
+  }
+}
+
+function filterUsers() {
+  const q = document.getElementById('user-search').value.toLowerCase();
+  renderUsers(q ? _users.filter(u => (u.name+u.email).toLowerCase().includes(q)) : _users);
+}
+
+async function toggleUser(uid, btn) {
+  const r = await POST('/api/admin/users/'+uid+'/toggle', {});
+  if (r.error) { toast(r.error, 'err'); return; }
+  toast(r.is_active ? 'User enabled' : 'User disabled', 'ok');
+  // Refresh user in list
+  const u = _users.find(u => u.id === uid);
+  if (u) { u.is_active = r.is_active; renderUsers(_users); }
+}
+
+function openAdjust(uid, name) {
+  _adjustUid = uid;
+  document.getElementById('modal-user-name').textContent = name;
+  document.getElementById('modal-amount').value = '';
+  document.getElementById('modal-note').value = '';
+  document.getElementById('modal-err').textContent = '';
+  document.getElementById('modal-bg').classList.add('show');
+}
+function closeModal() {
+  document.getElementById('modal-bg').classList.remove('show');
+  _adjustUid = null;
+}
+
+async function submitAdjust() {
+  const amount = parseFloat(document.getElementById('modal-amount').value);
+  const note = document.getElementById('modal-note').value.trim() || 'Admin adjustment';
+  const err = document.getElementById('modal-err');
+  if (isNaN(amount) || amount === 0) { err.textContent = 'Enter a non-zero amount'; return; }
+  const r = await POST('/api/admin/users/'+_adjustUid+'/adjust', {amount, note});
+  if (r.error) { err.textContent = r.error; return; }
+  toast(`Wallet updated → ${fmtMoney(r.new_balance)}`, 'ok');
+  closeModal();
+  // Update local user data
+  const u = _users.find(u => u.id === _adjustUid);
+  if (u) { u.wallet_balance = r.new_balance; renderUsers(_users); }
+  // Reload stats
+  GET('/api/admin/stats').then(s => {
+    document.getElementById('s-deposited').textContent = fmtMoney(s.total_deposited);
+  });
+}
+
+async function doLogout() {
+  await POST('/api/auth/logout', {});
+  location.href = '/';
+}
+
+// Close modal on background click
+document.getElementById('modal-bg').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeModal();
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+init();
+</script>
+</body>
+</html>
