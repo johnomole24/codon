@@ -1,0 +1,24 @@
+{
+  "name": "Codon Trader",
+  "short_name": "Trader",
+  "description": "Learn trading and execute paper trades",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B0D1E",
+  "theme_color": "#4C7BF4",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
