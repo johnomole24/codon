@@ -1,0 +1,11 @@
+services:
+  trader:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - trader-data:/root/.codon_trading
+    restart: unless-stopped
+
+volumes:
+  trader-data:
