@@ -4,8 +4,8 @@
   "description": "Learn trading and execute paper trades",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0f1117",
-  "theme_color": "#00c896",
+  "background_color": "#0B0D1E",
+  "theme_color": "#4C7BF4",
   "orientation": "portrait",
   "icons": [
     {
