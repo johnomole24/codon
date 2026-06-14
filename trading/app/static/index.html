@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta name="theme-color" content="#0f1117"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Trader"/>
+<link rel="manifest" href="/manifest.json"/>
+<title>Codon Trader</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Reset & base ─────────────────────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0f1117;--surface:#1a1d27;--surface2:#22263a;--border:#2a2f45;
+  --green:#00c896;--red:#ff4d6a;--yellow:#f0c94d;--blue:#4d94ff;
+  --text:#e8eaf0;--muted:#6b7394;--accent:#00c896;
+  --radius:14px;--nav-h:64px;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'SF Pro Text',Roboto,sans-serif;font-size:15px;overflow:hidden}
+button{cursor:pointer;border:none;background:none;color:inherit;font:inherit}
+input,select{font:inherit;color:var(--text);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px;width:100%;outline:none}
+input:focus,select:focus{border-color:var(--accent)}
+
+/* ── Layout ──────────────────────────────────────────────────────── */
+#app{display:flex;flex-direction:column;height:100%;height:100dvh}
+#screen{flex:1;overflow-y:auto;overflow-x:hidden;padding:0 0 calc(var(--nav-h)+env(safe-area-inset-bottom)) 0}
+#screen::-webkit-scrollbar{display:none}
+
+/* ── Bottom Nav ──────────────────────────────────────────────────── */
+#nav{
+  display:flex;position:fixed;bottom:0;left:0;right:0;
+  height:calc(var(--nav-h)+env(safe-area-inset-bottom));
+  padding-bottom:env(safe-area-inset-bottom);
+  background:var(--surface);border-top:1px solid var(--border);
+  z-index:100;
+}
+.nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;color:var(--muted);font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;transition:color .2s}
+.nav-btn.active{color:var(--accent)}
+.nav-btn svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav-btn.active svg{stroke:var(--accent)}
+
+/* ── Header ──────────────────────────────────────────────────────── */
+.page-header{padding:16px 20px 4px;padding-top:calc(16px+env(safe-area-inset-top));position:sticky;top:0;background:var(--bg);z-index:10}
+.page-header h1{font-size:26px;font-weight:700;letter-spacing:-.5px}
+.page-header p{color:var(--muted);font-size:13px;margin-top:2px}
+
+/* ── Cards ───────────────────────────────────────────────────────── */
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin:12px 16px}
+.card-sm{padding:12px 14px;margin:8px 16px}
+.card h3{font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px}
+.section-title{font-size:13px;color:var(--muted);font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin:20px 20px 8px}
+
+/* ── Quote ticker ────────────────────────────────────────────────── */
+.quote-row{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--border)}
+.quote-row:last-child{border-bottom:none}
+.q-sym{font-weight:700;font-size:15px}
+.q-price{font-size:16px;font-weight:600}
+.q-chg{font-size:13px;font-weight:600;padding:3px 8px;border-radius:20px}
+.up{color:var(--green)}.down{color:var(--red)}
+.chip-up{background:rgba(0,200,150,.15);color:var(--green)}
+.chip-dn{background:rgba(255,77,106,.15);color:var(--red)}
+
+/* ── Search bar ──────────────────────────────────────────────────── */
+.search-wrap{padding:10px 16px;display:flex;gap:8px}
+.search-wrap input{flex:1}
+.search-wrap button{background:var(--accent);color:#000;font-weight:700;border-radius:10px;padding:10px 18px;white-space:nowrap}
+
+/* ── Big price hero ──────────────────────────────────────────────── */
+.price-hero{text-align:center;padding:20px 0 10px}
+.price-hero .sym{font-size:14px;color:var(--muted);font-weight:600;letter-spacing:1px;text-transform:uppercase}
+.price-hero .price{font-size:40px;font-weight:800;letter-spacing:-1px;margin:4px 0}
+.price-hero .chg{font-size:16px;font-weight:600}
+
+/* ── Indicator grid ──────────────────────────────────────────────── */
+.ind-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.ind-cell{background:var(--surface2);border-radius:10px;padding:12px}
+.ind-cell .label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
+.ind-cell .value{font-size:18px;font-weight:700}
+.ind-cell .sub{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ── Signal badge ────────────────────────────────────────────────── */
+.signal-badge{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:30px;font-weight:800;font-size:15px;letter-spacing:.5px}
+.signal-badge.buy{background:rgba(0,200,150,.2);color:var(--green);border:1.5px solid var(--green)}
+.signal-badge.sell{background:rgba(255,77,106,.2);color:var(--red);border:1.5px solid var(--red)}
+.signal-badge.hold{background:rgba(240,201,77,.15);color:var(--yellow);border:1.5px solid var(--yellow)}
+
+/* ── Strategy picker ─────────────────────────────────────────────── */
+.strategy-pills{display:flex;gap:8px;overflow-x:auto;padding:4px 0;scrollbar-width:none}
+.strategy-pills::-webkit-scrollbar{display:none}
+.pill{padding:7px 14px;border-radius:20px;font-size:12px;font-weight:700;letter-spacing:.3px;background:var(--surface2);color:var(--muted);border:1px solid var(--border);white-space:nowrap;cursor:pointer;transition:.2s}
+.pill.active{background:var(--accent);color:#000;border-color:var(--accent)}
+
+/* ── Period picker ───────────────────────────────────────────────── */
+.period-row{display:flex;gap:6px;padding:0 16px;margin-bottom:4px}
+.period-btn{flex:1;padding:7px 0;border-radius:8px;font-size:12px;font-weight:700;background:var(--surface2);color:var(--muted);text-align:center;cursor:pointer;transition:.2s;border:1px solid transparent}
+.period-btn.active{background:var(--surface);color:var(--text);border-color:var(--border)}
+
+/* ── Trade form ──────────────────────────────────────────────────── */
+.trade-tabs{display:flex;gap:0;margin:12px 16px 0;background:var(--surface2);border-radius:10px;padding:4px}
+.trade-tab{flex:1;padding:9px;text-align:center;font-weight:700;font-size:14px;border-radius:8px;cursor:pointer;transition:.2s;color:var(--muted)}
+.trade-tab.buy.active{background:var(--green);color:#000}
+.trade-tab.sell.active{background:var(--red);color:#fff}
+.form-row{margin-bottom:12px}
+.form-row label{display:block;font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.4px;text-transform:uppercase;margin-bottom:6px}
+.btn-primary{width:100%;padding:15px;border-radius:12px;font-size:16px;font-weight:800;letter-spacing:.3px;transition:.15s;margin-top:4px}
+.btn-buy{background:var(--green);color:#000}
+.btn-sell{background:var(--red);color:#fff}
+.btn-primary:active{opacity:.8;transform:scale(.98)}
+
+/* ── Portfolio stats ─────────────────────────────────────────────── */
+.stat-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)}
+.stat-row:last-child{border-bottom:none}
+.stat-row .label{color:var(--muted);font-size:13px}
+.stat-row .val{font-size:15px;font-weight:700}
+.position-item{padding:14px 0;border-bottom:1px solid var(--border)}
+.position-item:last-child{border-bottom:none}
+.pos-header{display:flex;justify-content:space-between;align-items:flex-start}
+.pos-sym{font-weight:800;font-size:16px}
+.pos-shares{font-size:12px;color:var(--muted);margin-top:2px}
+.pos-value{text-align:right}
+.pos-price{font-size:15px;font-weight:700}
+.pos-pnl{font-size:13px;font-weight:600;margin-top:2px}
+
+/* ── Learn ───────────────────────────────────────────────────────── */
+.lesson-item{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--border);cursor:pointer}
+.lesson-item:last-child{border-bottom:none}
+.lesson-num{width:32px;height:32px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;color:var(--accent);flex-shrink:0}
+.lesson-title{flex:1;margin-left:12px;font-weight:600}
+.lesson-arrow{color:var(--muted)}
+.lesson-body{padding:16px 20px;line-height:1.7;white-space:pre-wrap;font-size:14px;font-family:inherit}
+.glossary-item{padding:10px 0;border-bottom:1px solid var(--border)}
+.glossary-item:last-child{border-bottom:none}
+.gterm{font-weight:700;color:var(--accent);margin-bottom:3px}
+.gdef{font-size:13px;color:var(--muted);line-height:1.5}
+.quiz-option{display:block;width:100%;text-align:left;padding:12px 16px;border-radius:10px;background:var(--surface2);margin-bottom:8px;font-size:14px;border:1.5px solid transparent;transition:.2s}
+.quiz-option.correct{border-color:var(--green);color:var(--green);background:rgba(0,200,150,.1)}
+.quiz-option.wrong{border-color:var(--red);color:var(--red);background:rgba(255,77,106,.1)}
+
+/* ── Toast ───────────────────────────────────────────────────────── */
+#toast{position:fixed;bottom:calc(var(--nav-h)+env(safe-area-inset-bottom)+16px);left:50%;transform:translateX(-50%) translateY(20px);background:var(--surface);border:1px solid var(--border);color:var(--text);padding:12px 20px;border-radius:30px;font-size:14px;font-weight:600;opacity:0;transition:.3s;z-index:999;pointer-events:none;white-space:nowrap;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.success{border-color:var(--green);color:var(--green)}
+#toast.error{border-color:var(--red);color:var(--red)}
+
+/* ── Loader ──────────────────────────────────────────────────────── */
+.loader{display:flex;justify-content:center;padding:40px;color:var(--muted)}
+.spinner{width:28px;height:28px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Backtest bar chart ──────────────────────────────────────────── */
+.bt-stat{display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px}
+.bt-stat:last-child{border-bottom:none}
+.bt-label{color:var(--muted)}
+.bt-val{font-weight:700}
+
+/* ── Chart container ─────────────────────────────────────────────── */
+.chart-wrap{padding:0 10px;height:200px;position:relative}
+
+/* ── Misc ────────────────────────────────────────────────────────── */
+.empty{text-align:center;padding:48px 20px;color:var(--muted)}
+.divider{height:1px;background:var(--border);margin:4px 0}
+.back-btn{display:flex;align-items:center;gap:6px;color:var(--accent);font-weight:600;font-size:15px;padding:0;margin-bottom:4px;cursor:pointer}
+.back-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="screen"></div>
+  <nav id="nav">
+    <button class="nav-btn active" onclick="showTab('markets')" id="nb-markets">
+      <svg viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Markets
+    </button>
+    <button class="nav-btn" onclick="showTab('analyze')" id="nb-analyze">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Analyze
+    </button>
+    <button class="nav-btn" onclick="showTab('trade')" id="nb-trade">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+      Trade
+    </button>
+    <button class="nav-btn" onclick="showTab('portfolio')" id="nb-portfolio">
+      <svg viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
+      Portfolio
+    </button>
+    <button class="nav-btn" onclick="showTab('learn')" id="nb-learn">
+      <svg viewBox="0 0 24 24"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      Learn
+    </button>
+  </nav>
+</div>
+<div id="toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let currentTab = 'markets';
+let priceChart = null;
+let analyzeSymbol = 'AAPL';
+let analyzeStrategy = 'ma_crossover';
+let analyzePeriod = '3mo';
+let tradeMode = 'buy';
+let learnView = 'list'; // 'list' | 'lesson' | 'glossary'
+let watchlist = ['AAPL','MSFT','NVDA','SPY','BTC-USD','TSLA'];
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function toast(msg, type='') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.className = '', 2400);
+}
+
+// ── API ───────────────────────────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return r.json();
+}
+const GET = p => api('GET', p);
+const POST = (p, b) => api('POST', p, b);
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  currentTab = name;
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('nb-' + name)?.classList.add('active');
+  learnView = 'list';
+  render();
+}
+
+function render() {
+  const s = document.getElementById('screen');
+  s.scrollTop = 0;
+  if (currentTab === 'markets')   renderMarkets(s);
+  else if (currentTab === 'analyze') renderAnalyze(s);
+  else if (currentTab === 'trade')   renderTrade(s);
+  else if (currentTab === 'portfolio') renderPortfolio(s);
+  else if (currentTab === 'learn')   renderLearn(s);
+}
+
+// ── Markets ───────────────────────────────────────────────────────────────────
+function renderMarkets(s) {
+  s.innerHTML = `
+    <div class="page-header">
+      <h1>Markets</h1>
+      <p>Simulated prices · paper trading</p>
+    </div>
+    <div class="search-wrap">
+      <input id="srch" placeholder="Symbol, e.g. AAPL" onkeydown="if(event.key==='Enter')lookupSymbol()"/>
+      <button onclick="lookupSymbol()">Go</button>
+    </div>
+    <div id="market-detail"></div>
+    <div class="section-title">Watchlist</div>
+    <div class="card" style="padding:4px 16px" id="watchlist-card">
+      <div class="loader"><div class="spinner"></div></div>
+    </div>`;
+  loadWatchlist();
+}
+
+async function loadWatchlist() {
+  const card = document.getElementById('watchlist-card');
+  if (!card) return;
+  const quotes = await GET(`/api/quote-multi?symbols=${watchlist.join(',')}`);
+  if (!card) return;
+  card.innerHTML = quotes.map(q => {
+    if (q.error) return `<div class="quote-row"><span class="q-sym">${q.symbol}</span><span style="color:var(--muted);font-size:12px">N/A</span></div>`;
+    const up = q.change >= 0;
+    return `<div class="quote-row" onclick="openSymbolDetail('${q.symbol}')">
+      <div>
+        <div class="q-sym">${q.symbol}</div>
+        <div style="font-size:12px;color:var(--muted)">${q.source==='live'?'Live':'Simulated'}</div>
+      </div>
+      <div style="text-align:right">
+        <div class="q-price">$${fmt(q.price)}</div>
+        <span class="q-chg ${up?'chip-up':'chip-dn'}">${up?'+':''}${fmt(q.change)} (${q.change_pct>0?'+':''}${q.change_pct}%)</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function lookupSymbol() {
+  const sym = document.getElementById('srch').value.trim().toUpperCase();
+  if (!sym) return;
+  openSymbolDetail(sym);
+}
+
+async function openSymbolDetail(sym) {
+  const d = document.getElementById('market-detail');
+  if (!d) return;
+  analyzeSymbol = sym;
+  d.innerHTML = `<div class="loader" style="padding:20px"><div class="spinner"></div></div>`;
+  const [quote, chart] = await Promise.all([
+    GET(`/api/quote/${sym}`),
+    GET(`/api/chart/${sym}?period=3mo`)
+  ]);
+  if (!document.getElementById('market-detail')) return;
+  if (quote.error) { d.innerHTML = `<div class="card"><span style="color:var(--red)">${quote.error}</span></div>`; return; }
+  const up = quote.change >= 0;
+  d.innerHTML = `
+    <div class="price-hero">
+      <div class="sym">${sym}</div>
+      <div class="price">$${fmt(quote.price)}</div>
+      <div class="chg ${up?'up':'down'}">${up?'▲':'▼'} ${up?'+':''}${fmt(quote.change)} (${quote.change_pct>0?'+':''}${quote.change_pct}%)</div>
+    </div>
+    <div class="period-row">
+      ${['1mo','3mo','6mo','1y','2y'].map(p=>`<div class="period-btn${p==='3mo'?' active':''}" onclick="refreshChart('${sym}','${p}',this)">${p}</div>`).join('')}
+    </div>
+    <div class="card" style="padding:12px 8px">
+      <div class="chart-wrap"><canvas id="price-canvas"></canvas></div>
+    </div>
+    <div style="display:flex;gap:10px;padding:0 16px 4px">
+      <button class="btn-primary btn-buy" style="flex:1;padding:12px;font-size:14px" onclick="goTrade('${sym}','buy')">Buy</button>
+      <button class="btn-primary btn-sell" style="flex:1;padding:12px;font-size:14px" onclick="goTrade('${sym}','sell')">Sell</button>
+    </div>`;
+  drawChart(chart);
+}
+
+function goTrade(sym, mode) {
+  document.getElementById('trade-sym-input') ? null : null;
+  showTab('trade');
+  setTimeout(() => {
+    const i = document.getElementById('trade-sym-input');
+    const t = document.getElementById(`tt-${mode}`);
+    if (i) i.value = sym;
+    if (t) t.click();
+  }, 50);
+}
+
+async function refreshChart(sym, period, el) {
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  const chart = await GET(`/api/chart/${sym}?period=${period}`);
+  drawChart(chart);
+}
+
+function drawChart(records) {
+  const canvas = document.getElementById('price-canvas');
+  if (!canvas) return;
+  if (priceChart) { priceChart.destroy(); priceChart = null; }
+  const labels = records.map(r => r.date);
+  const closes = records.map(r => r.Close);
+  const up = closes[closes.length-1] >= closes[0];
+  const color = up ? '#00c896' : '#ff4d6a';
+  priceChart = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: closes, borderColor: color, borderWidth: 2,
+        pointRadius: 0, fill: true,
+        backgroundColor: ctx => {
+          const g = ctx.chart.ctx.createLinearGradient(0,0,0,200);
+          g.addColorStop(0, color + '40'); g.addColorStop(1, color + '00');
+          return g;
+        },
+        tension: 0.3,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: {
+        mode: 'index', intersect: false,
+        callbacks: { label: ctx => `$${ctx.parsed.y.toFixed(2)}` }
+      }},
+      scales: {
+        x: { display: false },
+        y: { display: true, position: 'right',
+          grid: { color: '#2a2f45' },
+          ticks: { color: '#6b7394', font: { size: 10 },
+            callback: v => `$${v.toFixed(0)}` }
+        }
+      },
+      interaction: { mode: 'index', intersect: false }
+    }
+  });
+}
+
+// ── Analyze ───────────────────────────────────────────────────────────────────
+function renderAnalyze(s) {
+  s.innerHTML = `
+    <div class="page-header">
+      <h1>Analyze</h1>
+      <p>Indicators · Signals · Backtest</p>
+    </div>
+    <div class="search-wrap">
+      <input id="asym" placeholder="Symbol" value="${analyzeSymbol}" onkeydown="if(event.key==='Enter')runAnalysis()"/>
+      <button onclick="runAnalysis()">Run</button>
+    </div>
+    <div class="section-title">Strategy</div>
+    <div style="padding:0 16px 8px">
+      <div class="strategy-pills" id="strat-pills">
+        ${['ma_crossover','rsi','bollinger','macd'].map(n=>`
+          <div class="pill${n===analyzeStrategy?' active':''}" onclick="selectStrategy('${n}',this)">${stratLabel(n)}</div>
+        `).join('')}
+      </div>
+    </div>
+    <div id="analyze-result"><div class="loader"><div class="spinner"></div></div></div>`;
+  runAnalysis();
+}
+
+function stratLabel(n) {
+  return {ma_crossover:'MA Cross',rsi:'RSI',bollinger:'Bollinger',macd:'MACD'}[n] || n;
+}
+
+function selectStrategy(name, el) {
+  analyzeStrategy = name;
+  document.querySelectorAll('#strat-pills .pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  runAnalysis();
+}
+
+async function runAnalysis() {
+  analyzeSymbol = (document.getElementById('asym')?.value || analyzeSymbol).trim().toUpperCase();
+  const r = document.getElementById('analyze-result');
+  if (r) r.innerHTML = `<div class="loader"><div class="spinner"></div></div>`;
+  const [ind, sig] = await Promise.all([
+    GET(`/api/analyze/${analyzeSymbol}?period=6mo`),
+    GET(`/api/signal/${analyzeSymbol}?strategy=${analyzeStrategy}&period=1y`)
+  ]);
+  if (!document.getElementById('analyze-result')) return;
+  if (ind.error) { r.innerHTML = `<div class="card" style="color:var(--red)">${ind.error}</div>`; return; }
+
+  const sigType = sig.signal?.startsWith('BUY') ? 'buy' : sig.signal?.startsWith('SELL') ? 'sell' : 'hold';
+  const rsiColor = ind.rsi14 > 70 ? 'var(--red)' : ind.rsi14 < 30 ? 'var(--green)' : 'var(--text)';
+  const macdColor = ind.macd > ind.macd_signal ? 'var(--green)' : 'var(--red)';
+
+  document.getElementById('analyze-result').innerHTML = `
+    <div class="card" style="text-align:center">
+      <div style="color:var(--muted);font-size:12px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">${analyzeSymbol} · ${stratLabel(analyzeStrategy)}</div>
+      <div class="signal-badge ${sigType}" style="display:inline-flex;margin-bottom:8px">
+        ${sigType==='buy'?'▲':'sigType'==='sell'?'▼':'●'} ${sig.signal || 'HOLD'}
+      </div>
+    </div>
+    <div class="section-title">Indicators</div>
+    <div class="card" style="padding:12px 16px">
+      <div class="ind-grid">
+        <div class="ind-cell">
+          <div class="label">RSI (14)</div>
+          <div class="value" style="color:${rsiColor}">${ind.rsi14?.toFixed(1) ?? '—'}</div>
+          <div class="sub">${ind.rsi14>70?'Overbought':ind.rsi14<30?'Oversold':'Neutral'}</div>
+        </div>
+        <div class="ind-cell">
+          <div class="label">MACD</div>
+          <div class="value" style="color:${macdColor}">${ind.macd?.toFixed(3) ?? '—'}</div>
+          <div class="sub">${ind.macd>ind.macd_signal?'Bullish':'Bearish'}</div>
+        </div>
+        <div class="ind-cell">
+          <div class="label">SMA 20</div>
+          <div class="value">$${ind.sma20?.toFixed(2) ?? '—'}</div>
+          <div class="sub">${ind.close>ind.sma20?'Price above':'Price below'}</div>
+        </div>
+        <div class="ind-cell">
+          <div class="label">BB %B</div>
+          <div class="value">${ind.bb_pct_b?.toFixed(2) ?? '—'}</div>
+          <div class="sub">${ind.bb_pct_b>0.8?'Near upper':ind.bb_pct_b<0.2?'Near lower':'Mid-band'}</div>
+        </div>
+        <div class="ind-cell">
+          <div class="label">ATR (14)</div>
+          <div class="value">$${ind.atr14?.toFixed(2) ?? '—'}</div>
+          <div class="sub">Daily vol</div>
+        </div>
+        <div class="ind-cell">
+          <div class="label">SMA 50</div>
+          <div class="value">$${ind.sma50?.toFixed(2) ?? '—'}</div>
+          <div class="sub">${ind.close>ind.sma50?'Price above':'Price below'}</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-title">Backtest (2y)</div>
+    <div id="bt-zone"><div class="loader"><div class="spinner"></div></div></div>`;
+  loadBacktest();
+}
+
+async function loadBacktest() {
+  const z = document.getElementById('bt-zone');
+  if (!z) return;
+  const bt = await POST('/api/backtest', {symbol: analyzeSymbol, strategy: analyzeStrategy, period:'2y', capital:10000});
+  if (!document.getElementById('bt-zone')) return;
+  if (bt.error) { document.getElementById('bt-zone').innerHTML = `<div class="card" style="color:var(--red)">${bt.error}</div>`; return; }
+  const outperform = bt.total_return_pct - bt.buy_hold_return_pct;
+  document.getElementById('bt-zone').innerHTML = `
+    <div class="card" style="padding:12px 16px">
+      ${[
+        ['Return', `${bt.total_return_pct>=0?'+':''}${bt.total_return_pct?.toFixed(2)}%`, bt.total_return_pct>=0?'var(--green)':'var(--red)'],
+        ['Buy & Hold', `${bt.buy_hold_return_pct>=0?'+':''}${bt.buy_hold_return_pct?.toFixed(2)}%`, ''],
+        ['Alpha', `${outperform>=0?'+':''}${outperform?.toFixed(2)}%`, outperform>=0?'var(--green)':'var(--red)'],
+        ['Trades', bt.num_trades, ''],
+        ['Win Rate', `${bt.win_rate_pct?.toFixed(1)}%`, ''],
+        ['Max Drawdown', `${bt.max_drawdown_pct?.toFixed(2)}%`, 'var(--red)'],
+      ].map(([l,v,c])=>`<div class="bt-stat"><span class="bt-label">${l}</span><span class="bt-val" style="color:${c||'var(--text)'}">${v}</span></div>`).join('')}
+    </div>`;
+}
+
+// ── Trade ─────────────────────────────────────────────────────────────────────
+function renderTrade(s) {
+  s.innerHTML = `
+    <div class="page-header">
+      <h1>Trade</h1>
+      <p>Paper trading · no real money</p>
+    </div>
+    <div class="trade-tabs">
+      <div class="trade-tab buy${tradeMode==='buy'?' active':''}" id="tt-buy" onclick="setTradeMode('buy')">Buy</div>
+      <div class="trade-tab sell${tradeMode==='sell'?' active':''}" id="tt-sell" onclick="setTradeMode('sell')">Sell</div>
+    </div>
+    <div class="card">
+      <div class="form-row">
+        <label>Symbol</label>
+        <input id="trade-sym-input" placeholder="e.g. AAPL" oninput="this.value=this.value.toUpperCase()" onblur="fetchTradeQuote()"/>
+      </div>
+      <div id="trade-quote-display"></div>
+      <div id="trade-fields">
+        <div class="form-row">
+          <label>Shares</label>
+          <input id="trade-shares" type="number" min="1" placeholder="Number of shares"/>
+        </div>
+      </div>
+      <button class="btn-primary ${tradeMode==='buy'?'btn-buy':'btn-sell'}" id="trade-submit-btn" onclick="submitTrade()">
+        ${tradeMode==='buy'?'Buy':'Sell'} Now
+      </button>
+    </div>
+    <div class="section-title">Position Sizer</div>
+    <div class="card">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div class="form-row" style="margin:0">
+          <label>Entry $</label><input id="sz-entry" type="number" placeholder="195.00"/>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label>Stop-Loss $</label><input id="sz-stop" type="number" placeholder="190.00"/>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label>Account $</label><input id="sz-account" type="number" placeholder="10000"/>
+        </div>
+        <div class="form-row" style="margin:0">
+          <label>Risk %</label><input id="sz-risk" type="number" placeholder="1" value="1"/>
+        </div>
+      </div>
+      <button class="btn-primary" style="background:var(--blue);color:#fff" onclick="calcSize()">Calculate</button>
+      <div id="sz-result" style="margin-top:12px"></div>
+    </div>`;
+}
+
+function setTradeMode(mode) {
+  tradeMode = mode;
+  document.querySelectorAll('.trade-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(`tt-${mode}`)?.classList.add('active');
+  const btn = document.getElementById('trade-submit-btn');
+  if (btn) {
+    btn.className = `btn-primary ${mode==='buy'?'btn-buy':'btn-sell'}`;
+    btn.textContent = `${mode==='buy'?'Buy':'Sell'} Now`;
+  }
+}
+
+async function fetchTradeQuote() {
+  const sym = document.getElementById('trade-sym-input')?.value.trim();
+  if (!sym) return;
+  const d = document.getElementById('trade-quote-display');
+  const q = await GET(`/api/quote/${sym}`);
+  if (!d) return;
+  if (q.error) { d.innerHTML = `<div style="color:var(--red);font-size:13px;margin-bottom:10px">${q.error}</div>`; return; }
+  const up = q.change >= 0;
+  d.innerHTML = `<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0 14px;border-bottom:1px solid var(--border);margin-bottom:12px">
+    <span style="font-weight:700">${q.symbol}</span>
+    <span>
+      <span style="font-size:18px;font-weight:800">$${fmt(q.price)}</span>
+      <span class="${up?'up':'down'}" style="font-size:12px;margin-left:6px">${up?'+':''}${q.change_pct}%</span>
+    </span>
+  </div>`;
+}
+
+async function submitTrade() {
+  const sym = document.getElementById('trade-sym-input')?.value.trim().toUpperCase();
+  const shares = parseInt(document.getElementById('trade-shares')?.value);
+  if (!sym) { toast('Enter a symbol', 'error'); return; }
+  if (!shares || shares < 1) { toast('Enter valid shares', 'error'); return; }
+  const endpoint = tradeMode === 'buy' ? '/api/trade/buy' : '/api/trade/sell';
+  const result = await POST(endpoint, {symbol: sym, shares});
+  if (result.error) { toast(result.error, 'error'); return; }
+  const t = result.trade;
+  if (tradeMode === 'buy') {
+    toast(`Bought ${t.shares} × ${t.symbol} @ $${fmt(t.price)}`, 'success');
+  } else {
+    toast(`Sold ${t.shares} × ${t.symbol}  P&L: $${t.pnl >= 0 ? '+' : ''}${t.pnl}`, 'success');
+  }
+  document.getElementById('trade-shares').value = '';
+}
+
+async function calcSize() {
+  const entry = parseFloat(document.getElementById('sz-entry')?.value);
+  const stop = parseFloat(document.getElementById('sz-stop')?.value);
+  const account = parseFloat(document.getElementById('sz-account')?.value) || 10000;
+  const riskPct = parseFloat(document.getElementById('sz-risk')?.value) || 1;
+  if (!entry || !stop) { toast('Enter entry and stop prices', 'error'); return; }
+  const r = await POST('/api/size', {entry, stop, account, risk_pct: riskPct});
+  if (r.error) { toast(r.error, 'error'); return; }
+  document.getElementById('sz-result').innerHTML = `
+    <div class="divider" style="margin-bottom:10px"></div>
+    ${[
+      ['Shares to buy', r.recommended_shares],
+      ['Position cost', `$${r.position_cost?.toLocaleString()}`],
+      ['Max loss', `$${r.potential_loss}`],
+      ['1:2 target', `$${r.reward_target_1r2r?.toFixed(2)}`],
+    ].map(([l,v]) => `<div class="bt-stat"><span class="bt-label">${l}</span><span class="bt-val">${v}</span></div>`).join('')}`;
+}
+
+// ── Portfolio ─────────────────────────────────────────────────────────────────
+function renderPortfolio(s) {
+  s.innerHTML = `
+    <div class="page-header">
+      <h1>Portfolio</h1>
+      <p>Paper trading balance</p>
+    </div>
+    <div id="port-content"><div class="loader"><div class="spinner"></div></div></div>`;
+  loadPortfolio();
+}
+
+async function loadPortfolio() {
+  const c = document.getElementById('port-content');
+  if (!c) return;
+  const p = await GET('/api/portfolio');
+  if (!c) return;
+  if (p.error) { c.innerHTML = `<div class="card" style="color:var(--red)">${p.error}</div>`; return; }
+
+  const initCap = 10000;
+  const totalPct = ((p.total_value - initCap) / initCap * 100).toFixed(2);
+  const totalColor = p.total_value >= initCap ? 'var(--green)' : 'var(--red)';
+
+  c.innerHTML = `
+    <div class="card">
+      <div style="text-align:center;padding:8px 0 14px">
+        <div style="font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.5px;text-transform:uppercase">Total Value</div>
+        <div style="font-size:36px;font-weight:800;margin:6px 0">$${p.total_value?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div style="font-size:16px;font-weight:600;color:${totalColor}">${p.total_value>=initCap?'+':''}${totalPct}%</div>
+      </div>
+      <div class="divider"></div>
+      ${[
+        ['Cash', `$${p.cash?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`],
+        ['Positions', `$${p.positions_value?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}`],
+        ['Realized P&L', `$${p.realized_pnl>=0?'+':''}${p.realized_pnl?.toFixed(2)}`],
+        ['Trades', p.num_trades],
+      ].map(([l,v])=>`<div class="stat-row"><span class="label">${l}</span><span class="val">${v}</span></div>`).join('')}
+    </div>
+    ${p.positions?.length ? `
+      <div class="section-title">Open Positions</div>
+      <div class="card" style="padding:4px 16px">
+        ${p.positions.map(pos => {
+          const pnlColor = pos.unrealized_pnl >= 0 ? 'var(--green)' : 'var(--red)';
+          return `<div class="position-item">
+            <div class="pos-header">
+              <div>
+                <div class="pos-sym">${pos.symbol}</div>
+                <div class="pos-shares">${pos.shares} shares · avg $${pos.avg_price?.toFixed(2)}</div>
+              </div>
+              <div class="pos-value">
+                <div class="pos-price">$${pos.market_value?.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+                <div class="pos-pnl" style="color:${pnlColor}">${pos.unrealized_pnl>=0?'+':''}$${pos.unrealized_pnl?.toFixed(2)} (${pos.unrealized_pct>=0?'+':''}${pos.unrealized_pct?.toFixed(1)}%)</div>
+              </div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>` : '<div class="empty">No open positions</div>'}
+    ${p.history?.length ? `
+      <div class="section-title">Recent Trades</div>
+      <div class="card" style="padding:4px 16px">
+        ${p.history.slice().reverse().slice(0,10).map(t => {
+          const isBuy = t.action === 'BUY';
+          return `<div class="stat-row">
+            <div>
+              <span class="${isBuy?'up':'down'}" style="font-weight:700">${t.action}</span>
+              <span style="color:var(--muted);font-size:12px;margin-left:6px">${t.date?.slice(0,10)}</span>
+              <div style="font-size:13px;color:var(--muted)">${t.shares} × ${t.symbol} @ $${fmt(t.price)}</div>
+            </div>
+            <span style="font-weight:700;color:${t.pnl>=0?'var(--green)':'var(--red)'}">${t.pnl!=null?(t.pnl>=0?'+':'')+`$${t.pnl?.toFixed(2)}`:''}</span>
+          </div>`;
+        }).join('')}
+      </div>` : ''}
+    <div style="padding:16px">
+      <button class="btn-primary" style="background:var(--surface2);color:var(--muted)" onclick="confirmReset()">Reset Portfolio</button>
+    </div>`;
+}
+
+function confirmReset() {
+  if (!confirm('Reset portfolio to $10,000 cash? This clears all positions and history.')) return;
+  POST('/api/portfolio/reset', {capital: 10000}).then(() => {
+    toast('Portfolio reset to $10,000', 'success');
+    loadPortfolio();
+  });
+}
+
+// ── Learn ─────────────────────────────────────────────────────────────────────
+function renderLearn(s) {
+  if (learnView === 'glossary') { renderGlossary(s); return; }
+  s.innerHTML = `
+    <div class="page-header">
+      <h1>Learn</h1>
+      <p>Lessons · Glossary · Quizzes</p>
+    </div>
+    <div class="section-title">Lessons</div>
+    <div class="card" id="lessons-list"><div class="loader"><div class="spinner"></div></div></div>
+    <div class="section-title" style="margin-top:4px">Reference</div>
+    <div class="card" style="padding:4px 16px">
+      <div class="lesson-item" onclick="showGlossary()">
+        <div class="lesson-num" style="background:rgba(77,148,255,.15);color:var(--blue)">A</div>
+        <span class="lesson-title">Trading Glossary (${Object.keys({}).length || 30} terms)</span>
+        <span class="lesson-arrow">›</span>
+      </div>
+    </div>`;
+  GET('/api/learn/lessons').then(lessons => {
+    const list = document.getElementById('lessons-list');
+    if (!list) return;
+    list.innerHTML = `<div style="padding:4px 0">${lessons.map(l => `
+      <div class="lesson-item" onclick="openLesson(${l.id})">
+        <div class="lesson-num">${l.id}</div>
+        <span class="lesson-title">${l.title}</span>
+        <span class="lesson-arrow">›</span>
+      </div>`).join('')}</div>`;
+  });
+}
+
+async function openLesson(id) {
+  const s = document.getElementById('screen');
+  s.innerHTML = `<div class="loader" style="padding:60px"><div class="spinner"></div></div>`;
+  const lesson = await GET(`/api/learn/lesson/${id}`);
+  learnView = 'lesson';
+  let quizAnswered = false;
+  s.innerHTML = `
+    <div class="page-header">
+      <button class="back-btn" onclick="learnView='list';render()">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        Lessons
+      </button>
+      <h1>Lesson ${lesson.id}</h1>
+      <p>${lesson.title}</p>
+    </div>
+    <div class="card">
+      <div class="lesson-body">${lesson.content}</div>
+    </div>
+    <div class="section-title">Quiz</div>
+    <div class="card" id="quiz-wrap">
+      ${lesson.quiz.map((q,qi) => `
+        <div style="margin-bottom:20px">
+          <div style="font-weight:700;margin-bottom:12px;line-height:1.5">${q.q}</div>
+          ${q.options.map(opt => `
+            <button class="quiz-option" onclick="answerQuiz(this,'${opt[0]}','${q.answer}',${qi})">${opt}</button>
+          `).join('')}
+          <div id="quiz-fb-${qi}" style="font-size:13px;margin-top:6px;min-height:18px"></div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function answerQuiz(btn, chosen, correct, qi) {
+  const siblings = btn.parentElement.querySelectorAll('.quiz-option');
+  siblings.forEach(b => b.disabled = true);
+  const fb = document.getElementById(`quiz-fb-${qi}`);
+  if (chosen === correct) {
+    btn.classList.add('correct');
+    if (fb) { fb.textContent = '✓ Correct!'; fb.style.color = 'var(--green)'; }
+    toast('Correct! 🎯', 'success');
+  } else {
+    btn.classList.add('wrong');
+    siblings.forEach(b => { if (b.textContent.trim().startsWith(correct)) b.classList.add('correct'); });
+    if (fb) { fb.textContent = `Correct answer: ${correct}`; fb.style.color = 'var(--red)'; }
+    toast('Not quite — check the answer', 'error');
+  }
+}
+
+function showGlossary() {
+  learnView = 'glossary';
+  renderGlossary(document.getElementById('screen'));
+}
+
+async function renderGlossary(s) {
+  s.innerHTML = `
+    <div class="page-header">
+      <button class="back-btn" onclick="learnView='list';render()">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+        Learn
+      </button>
+      <h1>Glossary</h1>
+    </div>
+    <div class="search-wrap">
+      <input id="gterm-search" placeholder="Search terms…" oninput="filterGlossary()"/>
+    </div>
+    <div class="card" id="glossary-list"><div class="loader"><div class="spinner"></div></div></div>`;
+  const terms = await GET('/api/learn/glossary');
+  window._glossaryTerms = terms;
+  renderGlossaryList(terms);
+}
+
+function renderGlossaryList(terms) {
+  const list = document.getElementById('glossary-list');
+  if (!list) return;
+  list.innerHTML = `<div style="padding:4px 0">${terms.map(t => `
+    <div class="glossary-item">
+      <div class="gterm">${t.term}</div>
+      <div class="gdef">${t.definition}</div>
+    </div>`).join('')}</div>`;
+}
+
+function filterGlossary() {
+  const q = document.getElementById('gterm-search')?.value.toLowerCase() || '';
+  const filtered = (window._glossaryTerms || []).filter(t =>
+    t.term.toLowerCase().includes(q) || t.definition.toLowerCase().includes(q)
+  );
+  renderGlossaryList(filtered);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmt(n) {
+  if (n == null) return '—';
+  const abs = Math.abs(n);
+  if (abs >= 1000) return n.toLocaleString('en-US', {minimumFractionDigits:2,maximumFractionDigits:2});
+  if (abs >= 10)   return n.toFixed(2);
+  if (abs >= 1)    return n.toFixed(3);
+  return n.toFixed(4);
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').catch(() => {});
+}
+
+render();
+</script>
+</body>
+</html>
